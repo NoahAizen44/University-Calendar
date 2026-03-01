@@ -1,0 +1,8 @@
+{
+  "name": "Copy of Copy of ScholarSync AI",
+  "description": "An intelligent student calendar and study planner that uses Gemini to optimize your academic schedule, track assignments, and generate custom study sessions.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
