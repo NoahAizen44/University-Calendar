@@ -237,6 +237,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   const eventCourseMenuRef = React.useRef<HTMLDivElement | null>(null);
   const eventCalendarMenuRef = React.useRef<HTMLDivElement | null>(null);
   const [eventEditDraft, setEventEditDraft] = useState<{
+    entryType: 'event' | 'exam';
+    examKind: 'exam' | 'quiz';
     title: string;
     courseId: string;
     calendarId: string;
@@ -291,7 +293,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
           courseId: eventEditDraft.courseId || undefined,
           location: eventEditDraft.location.trim() || undefined,
           notes: eventEditDraft.notes.trim() || undefined,
-          source: 'manual',
+          source: eventEditDraft.entryType === 'exam' ? 'exam' : 'manual',
+          examKind: eventEditDraft.entryType === 'exam' ? eventEditDraft.examKind : undefined,
         } as CalendarEvent;
       }
       return null;
@@ -345,6 +348,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
       : '';
     const fallbackCalendarId = personalCalendars[0]?.id ?? calendars[0]?.id ?? '';
     return {
+      entryType: 'event',
+      examKind: 'exam',
       title: '',
       courseId: prefilledCourseId,
       calendarId: prefilledCourseCalendarId || fallbackCalendarId,
@@ -371,7 +376,18 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     setEventEditTab('details');
     setEventCourseMenuOpen(false);
     setEventCalendarMenuOpen(false);
-    setEventEditDraft(createDefaultEventDraftAt(d));
+    setEventEditDraft({ ...createDefaultEventDraftAt(d), entryType: 'event' });
+  };
+
+  const beginCreateExam = (d = currentDate) => {
+    if (!onEventsChange) return;
+    setCreateMenuOpen(false);
+    setSelectedAssignmentId(null);
+    setSelectedEventId('new');
+    setEventEditTab('details');
+    setEventCourseMenuOpen(false);
+    setEventCalendarMenuOpen(false);
+    setEventEditDraft({ ...createDefaultEventDraftAt(d), entryType: 'exam' });
   };
 
   const resolveBaseEvent = (id: string) => {
@@ -424,6 +440,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
       ? (courses.find(c => c.id === effectiveCourseId)?.calendarId ?? e.calendarId)
       : e.calendarId;
     setEventEditDraft({
+      entryType: e.source === 'exam' ? 'exam' : 'event',
+      examKind: e.examKind ?? (/\bquiz\b/i.test(e.title) ? 'quiz' : 'exam'),
       title: e.title,
       courseId: effectiveCourseId,
       calendarId: effectiveCalendarId,
@@ -644,6 +662,18 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                     }`}
                   >
                     Event
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      beginCreateExam(currentDate);
+                    }}
+                    disabled={!onEventsChange}
+                    className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors ${
+                      onEventsChange ? 'text-slate-700 hover:bg-slate-50' : 'text-slate-300 cursor-not-allowed'
+                    }`}
+                  >
+                    Exam
                   </button>
                   <button
                     type="button"
@@ -1585,7 +1615,37 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                         />
                       </div>
 
-                      <div className="md:col-span-2 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                      {eventEditDraft.entryType === 'exam' && (
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-slate-700 mb-2">Assessment type</label>
+                          <div className="grid grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setEventEditDraft({ ...eventEditDraft, examKind: 'exam' })}
+                              className={`px-3 py-2 rounded-xl border text-sm font-semibold transition-colors ${
+                                eventEditDraft.examKind === 'exam'
+                                  ? 'bg-indigo-600 text-white border-indigo-600'
+                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              Exam
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEventEditDraft({ ...eventEditDraft, examKind: 'quiz' })}
+                              className={`px-3 py-2 rounded-xl border text-sm font-semibold transition-colors ${
+                                eventEditDraft.examKind === 'quiz'
+                                  ? 'bg-indigo-600 text-white border-indigo-600'
+                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              Quiz
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="md:col-span-2 bg-indigo-50 border border-indigo-200 rounded-2xl p-4">
                         <div className="text-sm font-semibold text-slate-800 mb-3">Assign to</div>
                         {lockEventCourse ? (
                           <div>
@@ -1929,6 +1989,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                         };
                         const toHm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
                         setEventEditDraft({
+                          entryType: selectedEvent.source === 'exam' ? 'exam' : 'event',
+                          examKind: selectedEvent.examKind ?? (/\bquiz\b/i.test(selectedEvent.title) ? 'quiz' : 'exam'),
                           title: selectedEvent.title,
                           courseId: selectedEvent.courseId ?? '',
                           calendarId: selectedEvent.calendarId,
@@ -1977,6 +2039,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                           notes: eventEditDraft.notes.trim() ? eventEditDraft.notes.trim() : undefined,
                           courseId: effectiveCourseId || undefined,
                           calendarId: nextCalendarId,
+                          source: eventEditDraft.entryType === 'exam' ? 'exam' : 'manual',
+                          examKind: eventEditDraft.entryType === 'exam' ? eventEditDraft.examKind : undefined,
                           recurrence: eventEditDraft.recurrenceMode === 'none'
                             ? undefined
                             : eventEditDraft.recurrenceMode === 'daily'
@@ -2005,7 +2069,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                               courseId: patch.courseId,
                               location: patch.location,
                               notes: patch.notes,
-                              source: 'manual',
+                              source: patch.source ?? 'manual',
+                              examKind: patch.examKind,
                             },
                           ]);
                           toast('Event created');

@@ -17,6 +17,23 @@ export type AssistantAction =
       title: string;
       startTime: string; // ISO
       endTime: string; // ISO
+      eventType?: 'event' | 'exam';
+      examKind?: 'exam' | 'quiz';
+      examWeightPercent?: number;
+      examTotalMarks?: number;
+      courseRef?: string;
+      calendarRef?: string;
+      location?: string;
+      notes?: string;
+    }
+  | {
+      type: 'create_exam';
+      title: string;
+      startTime: string; // ISO
+      endTime: string; // ISO
+      examKind?: 'exam' | 'quiz';
+      examWeightPercent?: number;
+      examTotalMarks?: number;
       courseRef?: string;
       calendarRef?: string;
       location?: string;
@@ -103,6 +120,10 @@ export async function runAssistant(
       endTime: e.endTime,
       courseId: e.courseId,
       calendarId: e.calendarId,
+      source: e.source,
+      examKind: e.examKind,
+      examWeightPercent: e.examWeightPercent,
+      examTotalMarks: e.examTotalMarks,
     })),
     notes: context.notes.slice(0, 80).map(n => ({
       id: n.id,
@@ -142,6 +163,23 @@ Return strict JSON only with this shape:
       "title": "string",
       "startTime": "ISO string",
       "endTime": "ISO string",
+      "eventType": "event|exam optional",
+      "examKind": "exam|quiz optional",
+      "examWeightPercent": "number optional",
+      "examTotalMarks": "number optional",
+      "courseRef": "optional course code/name/id",
+      "calendarRef": "optional calendar name/id",
+      "location": "optional",
+      "notes": "optional"
+    },
+    {
+      "type": "create_exam",
+      "title": "string",
+      "startTime": "ISO string",
+      "endTime": "ISO string",
+      "examKind": "exam|quiz optional",
+      "examWeightPercent": "number optional",
+      "examTotalMarks": "number optional",
       "courseRef": "optional course code/name/id",
       "calendarRef": "optional calendar name/id",
       "location": "optional",
@@ -167,6 +205,8 @@ Rules:
 - If user asked for a study schedule, create one or more create_event actions.
 - If user asks to create classes/courses, emit create_course actions.
 - If user asks to assign existing events to classes, emit reassign_event_to_course actions.
+- If user asks to create an exam/quiz, prefer create_exam (or create_event with eventType="exam").
+- For exam/quiz creation, include examKind when possible, and include examWeightPercent/examTotalMarks if provided.
 - If date/time missing, infer reasonable defaults.
 - Keep reply concise and confirm what actions were planned.
 `;

@@ -9,8 +9,7 @@ import {
   UserCircle2,
   Clock,
   Layers,
-  ChevronDown,
-  ClipboardCheck
+  ChevronDown
 } from 'lucide-react';
 import { Course, Assignment, StudySession, UniCalendar, CalendarEvent, CourseNote, CourseResource, RecurringTask, PlannerState } from './types';
 import CalendarView from './components/CalendarView';
@@ -23,12 +22,14 @@ import ToastHost from './components/ToastHost';
 import AIAssistantWidget from './components/AIAssistantWidget';
 import SettingsPage from './components/SettingsPage';
 import AccountPage from './components/AccountPage';
+import ActivityEventList from './components/ActivityEventList';
 import { loadState, saveState } from './services/storage';
 import { uid } from './services/id';
 import { toast } from './services/toast';
 import type { AssistantAction } from './services/assistantService';
 import { clearStoredSession, isAuthConfigured, loadStoredSession, signInWithPassword, signUpWithPassword, storeSession, type AuthSession } from './services/auth';
 import { isCloudSyncConfigured, loadCloudPlannerState, saveCloudPlannerState } from './services/cloudSync';
+import { isExamEvent, withExamSource } from './services/eventClassification';
 
 function getAssignmentDueEventId(assignmentId: string) {
   return `asg_due_${assignmentId}`;
@@ -80,6 +81,7 @@ const App: React.FC = () => {
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle');
   const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
   const [cloudHydrated, setCloudHydrated] = useState(false);
+  const normalizeEvents = (list: CalendarEvent[]) => list.map(e => withExamSource(e));
 
   const applyLoadedState = (loaded: PlannerState) => {
     const loadedCalendars = (loaded.calendars ?? []).filter(c => {
@@ -102,7 +104,7 @@ const App: React.FC = () => {
     setCalendars(nextCalendars);
     setCourses(nextCourses);
     setAssignments(nextAssignments);
-    setEvents(nextEvents);
+    setEvents(normalizeEvents(nextEvents));
     if (loaded.recurringTasks) setRecurringTasks(loaded.recurringTasks);
     if (loaded.studySessions) setStudySessions(loaded.studySessions);
     if (loaded.notes) setNotes(loaded.notes);
@@ -338,7 +340,7 @@ const App: React.FC = () => {
         continue;
       }
 
-      if (action.type === 'create_event') {
+      if (action.type === 'create_event' || action.type === 'create_exam') {
         const start = new Date(action.startTime);
         const end = new Date(action.endTime);
         if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end.getTime() <= start.getTime()) continue;
@@ -347,7 +349,19 @@ const App: React.FC = () => {
           resolvedCourse?.calendarId
             ? nextCalendars.find(c => c.id === resolvedCourse.calendarId)
             : resolveCalendarByRef(action.calendarRef, nextCalendars);
-        nextEvents.push({
+        const explicitExam =
+          action.type === 'create_exam' ||
+          ('eventType' in action && action.eventType === 'exam');
+        const examKind = 'examKind' in action && action.examKind ? action.examKind : undefined;
+        const examWeightPercent =
+          'examWeightPercent' in action && typeof action.examWeightPercent === 'number'
+            ? action.examWeightPercent
+            : undefined;
+        const examTotalMarks =
+          'examTotalMarks' in action && typeof action.examTotalMarks === 'number'
+            ? action.examTotalMarks
+            : undefined;
+        nextEvents.push(withExamSource({
           id: uid('evt'),
           title: action.title,
           startTime: start.toISOString(),
@@ -356,8 +370,11 @@ const App: React.FC = () => {
           courseId: resolvedCourse?.id,
           location: action.location?.trim() || undefined,
           notes: action.notes?.trim() || undefined,
-          source: 'ai-import',
-        });
+          source: explicitExam ? 'exam' : 'ai-import',
+          examKind: explicitExam ? (examKind ?? 'exam') : undefined,
+          examWeightPercent: explicitExam ? examWeightPercent : undefined,
+          examTotalMarks: explicitExam ? examTotalMarks : undefined,
+        }));
         createdEvents += 1;
         continue;
       }
@@ -408,7 +425,7 @@ const App: React.FC = () => {
     }
 
     if (createdAssignments > 0) setAssignments(nextAssignments);
-    if (createdEvents > 0 || reassignedEvents > 0) setEvents(nextEvents);
+    if (createdEvents > 0 || reassignedEvents > 0) setEvents(normalizeEvents(nextEvents));
     if (createdCourses > 0) {
       setCourses(nextCourses);
       setCalendars(nextCalendars);
@@ -430,24 +447,12 @@ const App: React.FC = () => {
 
   const activityTabs: AppTab[] = ['assignments', 'events', 'exams'];
   const activityEvents = useMemo(
-    () => events.filter(e => e.source !== 'assignment').sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+    () => events.filter(e => e.source !== 'assignment' && !isExamEvent(e)).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
     [events]
   );
-  const examAssignments = useMemo(
-    () =>
-      assignments.filter(a => {
-        const t = a.title.toLowerCase();
-        return t.includes('exam') || t.includes('midterm') || t.includes('final') || t.includes('quiz');
-      }),
-    [assignments]
-  );
   const examEvents = useMemo(
-    () =>
-      activityEvents.filter(e => {
-        const t = e.title.toLowerCase();
-        return t.includes('exam') || t.includes('midterm') || t.includes('final') || t.includes('quiz');
-      }),
-    [activityEvents]
+    () => events.filter(e => e.source !== 'assignment' && isExamEvent(e)).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+    [events]
   );
 
   return (
@@ -544,7 +549,7 @@ const App: React.FC = () => {
                 events={events}
                 allGroups={calendars}
                 onUpdateGroups={setCalendars}
-                onUpdateEvents={setEvents}
+                onUpdateEvents={(next) => setEvents(normalizeEvents(next))}
                 onBack={() => setSelectedGroupId(null)}
               />
             );
@@ -563,7 +568,7 @@ const App: React.FC = () => {
                 notes={notes}
                 resources={resources}
                 onAssignmentsChange={setAssignments}
-                onEventsChange={setEvents}
+                onEventsChange={(next) => setEvents(normalizeEvents(next))}
                 onNotesChange={setNotes}
                 onResourcesChange={setResources}
                 onBack={() => setSelectedCourseId(null)}
@@ -610,7 +615,7 @@ const App: React.FC = () => {
                 onEventsChange={(nextScopedEvents) => {
                   setEvents(prev => {
                     const preserved = prev.filter(e => !scopedVisibleEventIds.has(e.id));
-                    return [...preserved, ...nextScopedEvents];
+                    return normalizeEvents([...preserved, ...nextScopedEvents]);
                   });
                 }}
                 onAssignmentsChange={setAssignments}
@@ -631,73 +636,37 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'events' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-slate-800">Events</h2>
-                <button
-                  type="button"
-                  onClick={() => handleNavigate('calendar')}
-                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all"
-                >
-                  Open Calendar
-                </button>
-              </div>
-              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                {activityEvents.length === 0 ? (
-                  <div className="py-16 text-center text-slate-500">No events yet.</div>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {activityEvents.map(ev => (
-                      <div key={ev.id} className="p-4">
-                        <div className="font-semibold text-slate-800">{ev.title}</div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          {new Date(ev.startTime).toLocaleString()} - {new Date(ev.endTime).toLocaleString()}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <ActivityEventList
+              mode="events"
+              events={activityEvents}
+              courses={courses}
+              calendars={calendars}
+              onAdd={(event) => setEvents(prev => normalizeEvents([...prev, { ...event, id: uid('evt') }]))}
+              onChange={(nextVisible) => {
+                const visibleIds = new Set(activityEvents.map(e => e.id));
+                setEvents(prev => {
+                  const keep = prev.filter(e => !visibleIds.has(e.id));
+                  return normalizeEvents([...keep, ...nextVisible]);
+                });
+              }}
+            />
           )}
 
           {activeTab === 'exams' && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <ClipboardCheck className="w-5 h-5 text-indigo-600" />
-                <h2 className="text-2xl font-bold text-slate-800">Exams</h2>
-              </div>
-              {examAssignments.length === 0 && examEvents.length === 0 ? (
-                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm py-16 text-center text-slate-500">
-                  No exams yet. Create an assignment/event with \"exam\", \"quiz\", \"midterm\", or \"final\" in the title.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                    <div className="px-4 py-3 border-b border-slate-100 font-semibold text-slate-800">Exam assignments</div>
-                    <div className="divide-y divide-slate-100">
-                      {examAssignments.map(a => (
-                        <div key={a.id} className="p-4">
-                          <div className="font-semibold text-slate-800">{a.title}</div>
-                          <div className="text-xs text-slate-500 mt-1">Due {new Date(a.dueDate).toLocaleDateString()}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                    <div className="px-4 py-3 border-b border-slate-100 font-semibold text-slate-800">Exam events</div>
-                    <div className="divide-y divide-slate-100">
-                      {examEvents.map(e => (
-                        <div key={e.id} className="p-4">
-                          <div className="font-semibold text-slate-800">{e.title}</div>
-                          <div className="text-xs text-slate-500 mt-1">{new Date(e.startTime).toLocaleString()}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <ActivityEventList
+              mode="exams"
+              events={examEvents}
+              courses={courses}
+              calendars={calendars}
+              onAdd={(event) => setEvents(prev => normalizeEvents([...prev, { ...event, id: uid('evt'), source: 'exam' }]))}
+              onChange={(nextVisible) => {
+                const visibleIds = new Set(examEvents.map(e => e.id));
+                setEvents(prev => {
+                  const keep = prev.filter(e => !visibleIds.has(e.id));
+                  return normalizeEvents([...keep, ...nextVisible]);
+                });
+              }}
+            />
           )}
 
           {activeTab === 'courses' && (

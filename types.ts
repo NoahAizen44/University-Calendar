@@ -1,7 +1,7 @@
 
 export type Priority = 'low' | 'medium' | 'high';
 
-export type EventSource = 'manual' | 'ai-import' | 'assignment' | 'study-plan';
+export type EventSource = 'manual' | 'ai-import' | 'assignment' | 'study-plan' | 'exam';
 
 export type RecurrenceFrequency = 'none' | 'weekly' | 'daily';
 
@@ -48,6 +48,9 @@ export interface CalendarEvent {
   notes?: string;
   source: EventSource;
   recurrence?: RecurrenceRule;
+  examWeightPercent?: number;
+  examTotalMarks?: number;
+  examKind?: 'exam' | 'quiz';
 }
 
 export interface CourseNote {

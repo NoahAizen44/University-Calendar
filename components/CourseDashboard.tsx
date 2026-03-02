@@ -26,6 +26,7 @@ import ConfirmDialog from './ConfirmDialog';
 import { uid } from '../services/id';
 import { putBlob, getBlob, deleteBlob } from '../services/idb';
 import { toast } from '../services/toast';
+import { isExamEvent } from '../services/eventClassification';
 
 interface CourseDashboardProps {
   course: Course;
@@ -70,7 +71,7 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
   onBack, 
   onEdit 
 }) => {
-  const [activeTab, setActiveTab] = useState<'assignments' | 'calendar' | 'events' | 'library' | 'goals'>('calendar');
+  const [activeTab, setActiveTab] = useState<'assignments' | 'calendar' | 'events' | 'exams' | 'library' | 'goals'>('calendar');
 
   const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'upcoming' | 'today' | 'week' | 'overdue' | 'completed'>('all');
   const [assignmentNextRecurringOnly, setAssignmentNextRecurringOnly] = useState(false);
@@ -349,6 +350,14 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
     () => events.filter(e => e.courseId === course.id && e.source !== 'assignment'),
     [events, course.id]
   );
+  const courseExamEvents = useMemo(
+    () => courseOnlyEvents.filter(e => isExamEvent(e)),
+    [courseOnlyEvents]
+  );
+  const courseNonExamEvents = useMemo(
+    () => courseOnlyEvents.filter(e => !isExamEvent(e)),
+    [courseOnlyEvents]
+  );
 
   const attendanceStats = useMemo(() => {
     const total = courseOnlyEvents.length;
@@ -423,7 +432,7 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
 
   const visibleCourseEvents = useMemo(() => {
     const now = Date.now();
-    const filtered = courseOnlyEvents.filter(ev => {
+    const filtered = courseNonExamEvents.filter(ev => {
       const end = new Date(ev.endTime).getTime();
       if (eventListFilter === 'all') return true;
       if (eventListFilter === 'upcoming') return end >= now;
@@ -464,7 +473,23 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
     }
 
     return eventListFilter === 'past' ? sorted.reverse() : sorted;
-  }, [courseOnlyEvents, eventListFilter, eventNextRecurringOnly]);
+  }, [courseNonExamEvents, eventListFilter, eventNextRecurringOnly]);
+
+  const visibleCourseExamEvents = useMemo(() => {
+    const now = Date.now();
+    const filtered = courseExamEvents.filter(ev => {
+      const end = new Date(ev.endTime).getTime();
+      if (eventListFilter === 'all') return true;
+      if (eventListFilter === 'upcoming') return end >= now;
+      return end < now;
+    });
+
+    const sorted = filtered
+      .slice()
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+    return eventListFilter === 'past' ? sorted.reverse() : sorted;
+  }, [courseExamEvents, eventListFilter]);
 
   const createNote = () => {
     const now = new Date().toISOString();
@@ -669,6 +694,11 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
             label="Events"
             active={activeTab === 'events'}
             onClick={() => setActiveTab('events')}
+          />
+          <TabButton
+            label="Exams"
+            active={activeTab === 'exams'}
+            onClick={() => setActiveTab('exams')}
           />
           <TabButton
             label="Library"
@@ -1380,6 +1410,107 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
 
           <div className="text-xs text-slate-500">
             This list shows the base events saved for the course. Recurrence expansion will be reflected in the calendar view.
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'exams' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <CalendarIcon className="w-5 h-5 text-indigo-600" />
+              Exams
+            </h3>
+            <div className="flex items-center gap-2">
+              <div className="relative flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEventFilter(v => !v)}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  <Filter className="w-4 h-4" />
+                  Filter
+                </button>
+
+                {showEventFilter && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowEventFilter(false)} aria-hidden="true" />
+                    <div className="absolute right-0 top-10 z-50 w-52 bg-white border border-slate-200 rounded-2xl shadow-lg p-2">
+                      {(
+                        [
+                          { key: 'upcoming', label: 'Upcoming' },
+                          { key: 'past', label: 'Past' },
+                          { key: 'all', label: 'All' },
+                        ] as const
+                      ).map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => {
+                            setEventListFilter(opt.key);
+                            setShowEventFilter(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                            eventListFilter === opt.key
+                              ? 'bg-indigo-50 text-indigo-700'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('calendar')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                Add Exam
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+            {visibleCourseExamEvents.length === 0 ? (
+              <div className="p-8 text-center text-slate-500">
+                {eventListFilter === 'upcoming'
+                  ? 'No upcoming exams yet.'
+                  : eventListFilter === 'past'
+                    ? 'No past exams yet.'
+                    : 'No exams yet.'}
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {visibleCourseExamEvents.slice(0, 60).map((ev) => {
+                  const start = new Date(ev.startTime);
+                  const end = new Date(ev.endTime);
+                  return (
+                    <button
+                      key={ev.id}
+                      type="button"
+                      onClick={() => setSelectedEventId(ev.id)}
+                      className="w-full text-left p-4 flex items-start justify-between gap-4 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-900 truncate">{ev.title}</div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}{' '}
+                          •{' '}
+                          {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}–
+                          {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                          {ev.location ? ` • ${ev.location}` : ''}
+                        </div>
+                      </div>
+                      <div className="text-xs font-semibold text-slate-400">Details →</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
