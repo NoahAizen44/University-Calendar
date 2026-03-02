@@ -85,10 +85,7 @@ const AssignmentList: React.FC<AssignmentListProps> = ({ assignments, courses, o
 
     const collapsed: Assignment[] = [];
     for (const list of grouped.values()) {
-      if (list.length === 1) {
-        collapsed.push(list[0]);
-        continue;
-      }
+      if (list.length < 2) continue;
       const sorted = list.slice().sort((a, b) => getDueDeadline(a).getTime() - getDueDeadline(b).getTime());
       const next = sorted.find(a => getDueDeadline(a).getTime() >= now.getTime());
       collapsed.push(next ?? sorted[sorted.length - 1]);
@@ -245,6 +242,30 @@ const AssignmentList: React.FC<AssignmentListProps> = ({ assignments, courses, o
         onClose={() => setSelectedAssignmentId(null)}
         onDelete={(assignmentId) => {
           if (!onChange) return;
+          const target = assignments.find(a => a.id === assignmentId);
+          if (!target) return;
+          const series = assignments.filter(a =>
+            a.id !== assignmentId &&
+            a.courseId === target.courseId &&
+            a.title.trim().toLowerCase() === target.title.trim().toLowerCase()
+          );
+
+          if (series.length > 0) {
+            const deleteAll = window.confirm(
+              `This looks like a recurring series (${series.length + 1} items).\n\nPress OK to delete all.\nPress Cancel to delete only this one.`
+            );
+            if (deleteAll) {
+              onChange(
+                assignments.filter(a => !(
+                  a.courseId === target.courseId &&
+                  a.title.trim().toLowerCase() === target.title.trim().toLowerCase()
+                ))
+              );
+              setSelectedAssignmentId(null);
+              return;
+            }
+          }
+
           onChange(assignments.filter(a => a.id !== assignmentId));
           setSelectedAssignmentId(null);
         }}

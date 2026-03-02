@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Filter, Plus, Search, Trash2, X } from 'lucide-react';
 import type { CalendarEvent, Course, UniCalendar } from '../types';
 import DatePicker from './DatePicker';
+import ConfirmDialog from './ConfirmDialog';
 
 type EventFilterMode = 'upcoming' | 'today' | 'week' | 'past';
 type ExamFilterMode = 'upcoming' | 'past';
@@ -71,6 +72,8 @@ const ActivityEventList: React.FC<Props> = ({ mode, events, courses, calendars, 
   const [nextRecurringOnly, setNextRecurringOnly] = useState(false);
   const [examKindFilter, setExamKindFilter] = useState<ExamKindFilter>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<CalendarEvent | null>(null);
+  const [showSeriesDeleteConfirm, setShowSeriesDeleteConfirm] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>('details');
   const [assignMenuOpen, setAssignMenuOpen] = useState(false);
   const assignButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -172,7 +175,6 @@ const ActivityEventList: React.FC<Props> = ({ mode, events, courses, calendars, 
     if (!nextRecurringOnly) return byTime;
 
     const recurring = byTime.filter(e => e.recurrence && e.recurrence.frequency !== 'none');
-    const nonRecurring = byTime.filter(e => !e.recurrence || e.recurrence.frequency === 'none');
     const groups = new Map<string, CalendarEvent[]>();
     const getRecurringBaseId = (id: string) => id.replace(/_\d{4}-\d{1,2}-\d{1,2}$/, '');
 
@@ -190,7 +192,7 @@ const ActivityEventList: React.FC<Props> = ({ mode, events, courses, calendars, 
       collapsedRecurring.push(next ?? sorted[sorted.length - 1]);
     }
 
-    return [...nonRecurring, ...collapsedRecurring].sort(
+    return collapsedRecurring.sort(
       (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
     );
   }, [events, courses, query, filter, nextRecurringOnly, isExamMode, examKindFilter]);
@@ -436,7 +438,10 @@ const ActivityEventList: React.FC<Props> = ({ mode, events, courses, calendars, 
                   </div>
                   <button
                     type="button"
-                    onClick={() => onChange(events.filter(x => x.id !== e.id))}
+                    onClick={() => {
+                      setPendingDelete(e);
+                      setShowSeriesDeleteConfirm(Boolean(e.recurrence && e.recurrence.frequency !== 'none'));
+                    }}
                     className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-rose-600 transition-colors"
                     title={`Delete ${mode.slice(0, -1)}`}
                   >
@@ -852,6 +857,45 @@ const ActivityEventList: React.FC<Props> = ({ mode, events, courses, calendars, 
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title={`Delete ${mode.slice(0, -1)}?`}
+        message={
+          pendingDelete
+            ? showSeriesDeleteConfirm
+              ? `"${pendingDelete.title}" is recurring. Delete all in the series or only this one?`
+              : `This will permanently delete "${pendingDelete.title}".`
+            : ''
+        }
+        confirmLabel={showSeriesDeleteConfirm ? 'Delete all' : `Delete ${mode.slice(0, -1)}`}
+        secondaryLabel={showSeriesDeleteConfirm ? 'Delete this one' : undefined}
+        onSecondary={
+          showSeriesDeleteConfirm
+            ? () => {
+                if (!pendingDelete) return;
+                onChange(events.filter(x => x.id !== pendingDelete.id));
+                setPendingDelete(null);
+                setShowSeriesDeleteConfirm(false);
+              }
+            : undefined
+        }
+        onCancel={() => {
+          setPendingDelete(null);
+          setShowSeriesDeleteConfirm(false);
+        }}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          if (showSeriesDeleteConfirm) {
+            const key = pendingDelete.id.replace(/_\d{4}-\d{1,2}-\d{1,2}$/, '');
+            onChange(events.filter(x => x.id.replace(/_\d{4}-\d{1,2}-\d{1,2}$/, '') !== key));
+          } else {
+            onChange(events.filter(x => x.id !== pendingDelete.id));
+          }
+          setPendingDelete(null);
+          setShowSeriesDeleteConfirm(false);
+        }}
+      />
     </div>
   );
 };

@@ -88,6 +88,10 @@ function daysBetween(a: Date, b: Date) {
   return Math.round(ms / (24 * 60 * 60 * 1000));
 }
 
+function getRecurringBaseId(id: string) {
+  return id.replace(/_\d{4}-\d{1,2}-\d{1,2}$/, '');
+}
+
 const EVENT_WEEKDAYS: Array<{ iso: number; label: string }> = [
   { iso: 1, label: 'Mon' },
   { iso: 2, label: 'Tue' },
@@ -216,6 +220,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [showDeleteEventConfirm, setShowDeleteEventConfirm] = useState(false);
+  const [showDeleteEventSeriesChoice, setShowDeleteEventSeriesChoice] = useState(false);
   const [quickAddDateYmd, setQuickAddDateYmd] = useState<string | null>(null);
   const [quickAddTitle, setQuickAddTitle] = useState('');
   const [draggingEventId, setDraggingEventId] = useState<string | null>(null);
@@ -268,6 +273,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({
       if (!selectedEventId) return null;
       const found = events.find(e => e.id === selectedEventId);
       if (found) return found;
+      const baseId = getRecurringBaseId(selectedEventId);
+      const base = events.find(e => e.id === baseId);
+      if (base) return base;
       if (selectedEventId === 'new' && eventEditDraft) {
         // Placeholder event object so the modal can render while creating.
         // The eventual save will create a real event entry.
@@ -1394,6 +1402,28 @@ const CalendarView: React.FC<CalendarViewProps> = ({
         onClose={() => setSelectedAssignmentId(null)}
         onDelete={(assignmentId) => {
           if (!onAssignmentsChange) return;
+          const target = assignments.find(a => a.id === assignmentId);
+          if (!target) return;
+          const series = assignments.filter(a =>
+            a.id !== assignmentId &&
+            a.courseId === target.courseId &&
+            a.title.trim().toLowerCase() === target.title.trim().toLowerCase()
+          );
+          if (series.length > 0) {
+            const deleteAll = window.confirm(
+              `This looks like a recurring series (${series.length + 1} items).\n\nPress OK to delete all.\nPress Cancel to delete only this one.`
+            );
+            if (deleteAll) {
+              onAssignmentsChange(
+                assignments.filter(a => !(
+                  a.courseId === target.courseId &&
+                  a.title.trim().toLowerCase() === target.title.trim().toLowerCase()
+                ))
+              );
+              setSelectedAssignmentId(null);
+              return;
+            }
+          }
           onAssignmentsChange(assignments.filter(a => a.id !== assignmentId));
           setSelectedAssignmentId(null);
         }}
@@ -1551,6 +1581,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                       type="button"
                       onClick={() => {
                         if (!onEventsChange) return;
+                        const baseId = selectedEventId ? getRecurringBaseId(selectedEventId) : selectedEvent.id;
+                        const baseEvent = events.find(e => e.id === baseId) ?? selectedEvent;
+                        const recurring = Boolean(baseEvent.recurrence && baseEvent.recurrence.frequency !== 'none');
+                        setShowDeleteEventSeriesChoice(recurring);
                         setShowDeleteEventConfirm(true);
                       }}
                       disabled={!onEventsChange}
@@ -2130,14 +2164,50 @@ const CalendarView: React.FC<CalendarViewProps> = ({
       <ConfirmDialog
         open={showDeleteEventConfirm && Boolean(selectedEvent) && selectedEvent.source !== 'assignment'}
         title="Delete event?"
-        message={selectedEvent ? `This will permanently delete "${selectedEvent.title}".` : ''}
-        confirmLabel="Delete event"
-        onCancel={() => setShowDeleteEventConfirm(false)}
+        message={
+          selectedEvent
+            ? showDeleteEventSeriesChoice
+              ? `"${selectedEvent.title}" is recurring. Delete all in the series or only this one?`
+              : `This will permanently delete "${selectedEvent.title}".`
+            : ''
+        }
+        confirmLabel={showDeleteEventSeriesChoice ? 'Delete all' : 'Delete event'}
+        secondaryLabel={showDeleteEventSeriesChoice ? 'Delete this one' : undefined}
+        onSecondary={
+          showDeleteEventSeriesChoice
+            ? () => {
+                if (!onEventsChange || !selectedEvent || selectedEvent.source === 'assignment') return;
+                const targetId = selectedEventId ?? selectedEvent.id;
+                const concrete = events.some(e => e.id === targetId);
+                const baseId = getRecurringBaseId(targetId);
+                onEventsChange(events.filter(e => concrete ? e.id !== targetId : e.id !== baseId));
+                toast('Event deleted');
+                setShowDeleteEventConfirm(false);
+                setShowDeleteEventSeriesChoice(false);
+                setSelectedEventId(null);
+                setEventEditDraft(null);
+              }
+            : undefined
+        }
+        onCancel={() => {
+          setShowDeleteEventConfirm(false);
+          setShowDeleteEventSeriesChoice(false);
+        }}
         onConfirm={() => {
           if (!onEventsChange || !selectedEvent || selectedEvent.source === 'assignment') return;
-          onEventsChange(events.filter(e => e.id !== selectedEvent.id));
+          if (showDeleteEventSeriesChoice) {
+            const targetId = selectedEventId ?? selectedEvent.id;
+            const baseId = getRecurringBaseId(targetId);
+            onEventsChange(events.filter(e => getRecurringBaseId(e.id) !== baseId));
+          } else {
+            const targetId = selectedEventId ?? selectedEvent.id;
+            const concrete = events.some(e => e.id === targetId);
+            const baseId = getRecurringBaseId(targetId);
+            onEventsChange(events.filter(e => concrete ? e.id !== targetId : e.id !== baseId));
+          }
           toast('Event deleted');
           setShowDeleteEventConfirm(false);
+          setShowDeleteEventSeriesChoice(false);
           setSelectedEventId(null);
           setEventEditDraft(null);
         }}

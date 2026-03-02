@@ -5,8 +5,10 @@ interface ConfirmDialogProps {
   title: string;
   message: string;
   confirmLabel?: string;
+  secondaryLabel?: string;
   cancelLabel?: string;
   onConfirm: () => void;
+  onSecondary?: () => void;
   onCancel: () => void;
 }
 
@@ -15,8 +17,10 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   title,
   message,
   confirmLabel = 'Delete',
+  secondaryLabel,
   cancelLabel = 'Cancel',
   onConfirm,
+  onSecondary,
   onCancel,
 }) => {
   if (!open) return null;
@@ -42,6 +46,15 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           >
             {cancelLabel}
           </button>
+          {secondaryLabel && onSecondary && (
+            <button
+              type="button"
+              onClick={onSecondary}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors"
+            >
+              {secondaryLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onConfirm}

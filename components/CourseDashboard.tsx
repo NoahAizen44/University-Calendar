@@ -23,6 +23,7 @@ import { Course, Assignment, AssignmentAttachment, CalendarEvent, CourseNote, Co
 import CalendarView from './CalendarView';
 import AddTaskModal from './AddTaskModal';
 import ConfirmDialog from './ConfirmDialog';
+import DatePicker from './DatePicker';
 import { uid } from '../services/id';
 import { putBlob, getBlob, deleteBlob } from '../services/idb';
 import { toast } from '../services/toast';
@@ -41,7 +42,8 @@ interface CourseDashboardProps {
   onNotesChange: (notes: CourseNote[]) => void;
   onResourcesChange: (resources: CourseResource[]) => void;
   onBack: () => void;
-  onEdit: () => void;
+  onEdit?: () => void;
+  onDeleteCourse?: (courseId: string) => void;
 }
 
 type GoalKind = 'manual' | 'attendance' | 'assignment-grade';
@@ -69,7 +71,8 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
   onNotesChange,
   onResourcesChange,
   onBack, 
-  onEdit 
+  onEdit,
+  onDeleteCourse,
 }) => {
   const [activeTab, setActiveTab] = useState<'assignments' | 'calendar' | 'events' | 'exams' | 'library' | 'goals'>('calendar');
 
@@ -108,6 +111,17 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
   const [pendingAssignmentDelete, setPendingAssignmentDelete] = useState<Assignment | null>(null);
   const [pendingAttachmentDelete, setPendingAttachmentDelete] = useState<{ assignmentId: string; attachment: AssignmentAttachment } | null>(null);
   const [pendingResourceDelete, setPendingResourceDelete] = useState<CourseResource | null>(null);
+  const [showCourseMenu, setShowCourseMenu] = useState(false);
+  const [showEditCourseModal, setShowEditCourseModal] = useState(false);
+  const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState(false);
+  const [courseDraft, setCourseDraft] = useState({
+    code: '',
+    name: '',
+    instructor: '',
+    color: 'bg-indigo-600',
+    startDate: '',
+    endDate: '',
+  });
   const [editingAssignment, setEditingAssignment] = useState(false);
   const [editDraft, setEditDraft] = useState<{
     title: string;
@@ -140,6 +154,17 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
       pointsPossible: typeof selectedAssignment.pointsPossible === 'number' ? String(selectedAssignment.pointsPossible) : '',
     });
   }, [selectedAssignmentId]);
+
+  useEffect(() => {
+    setCourseDraft({
+      code: course.code ?? '',
+      name: course.name ?? '',
+      instructor: course.instructor === '—' ? '' : (course.instructor ?? ''),
+      color: course.color ?? 'bg-indigo-600',
+      startDate: course.startDate ? new Date(course.startDate).toISOString().slice(0, 10) : '',
+      endDate: course.endDate ? new Date(course.endDate).toISOString().slice(0, 10) : '',
+    });
+  }, [course.id, course.code, course.name, course.instructor, course.color, course.startDate, course.endDate]);
 
   const [expandedPanel, setExpandedPanel] = useState<'notes' | 'resources' | null>(null);
 
@@ -227,10 +252,7 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
 
     const collapsed: Assignment[] = [];
     for (const list of grouped.values()) {
-      if (list.length === 1) {
-        collapsed.push(list[0]);
-        continue;
-      }
+      if (list.length < 2) continue;
       const sorted = list.slice().sort((a, b) => getDueDeadline(a).getTime() - getDueDeadline(b).getTime());
       const next = sorted.find(a => getDueDeadline(a).getTime() >= now.getTime());
       collapsed.push(next ?? sorted[sorted.length - 1]);
@@ -312,6 +334,16 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
   };
   const goalsStorageKey = `course_custom_goals_${course.id}`;
   const attendanceStorageKey = `course_attendance_${course.id}`;
+  const courseColorOptions = [
+    'bg-indigo-600',
+    'bg-emerald-600',
+    'bg-rose-600',
+    'bg-amber-500',
+    'bg-sky-600',
+    'bg-violet-600',
+    'bg-teal-600',
+    'bg-slate-600',
+  ];
 
   useEffect(() => {
     try {
@@ -445,17 +477,11 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
 
     if (eventNextRecurringOnly) {
       const groups = new Map<string, CalendarEvent[]>();
-      const recurringOnly: CalendarEvent[] = [];
-      const standalone: CalendarEvent[] = [];
       const getRecurringBaseId = (id: string) => id.replace(/_\d{4}-\d{1,2}-\d{1,2}$/, '');
 
       for (const ev of sorted) {
         const isRecurring = ev.recurrence?.frequency && ev.recurrence.frequency !== 'none';
-        if (!isRecurring) {
-          standalone.push(ev);
-          continue;
-        }
-        recurringOnly.push(ev);
+        if (!isRecurring) continue;
         const key = getRecurringBaseId(ev.id);
         const list = groups.get(key);
         if (list) list.push(ev);
@@ -468,8 +494,7 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
         collapsedRecurring.push(next ?? list[list.length - 1]);
       }
 
-      sorted = [...standalone, ...collapsedRecurring]
-        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      sorted = collapsedRecurring.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
     }
 
     return eventListFilter === 'past' ? sorted.reverse() : sorted;
@@ -531,6 +556,42 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
       updatedAt: now,
     };
     onResourcesChange([...resources, folder]);
+  };
+
+  const openCourseEditor = () => {
+    setShowCourseMenu(false);
+    setShowEditCourseModal(true);
+    onEdit?.();
+  };
+
+  const saveCourseDetails = () => {
+    const code = courseDraft.code.trim().toUpperCase();
+    const name = courseDraft.name.trim();
+    const instructor = courseDraft.instructor.trim();
+    if (!code || !name) {
+      alert('Please enter a course code and name.');
+      return;
+    }
+    if (courseDraft.startDate && courseDraft.endDate) {
+      const s = new Date(courseDraft.startDate);
+      const e = new Date(courseDraft.endDate);
+      if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && s.getTime() > e.getTime()) {
+        alert('Start date must be before end date.');
+        return;
+      }
+    }
+
+    onCourseChange({
+      ...course,
+      code,
+      name,
+      instructor: instructor || '—',
+      color: courseDraft.color,
+      startDate: courseDraft.startDate || undefined,
+      endDate: courseDraft.endDate || undefined,
+    });
+    setShowEditCourseModal(false);
+    toast('Course updated');
   };
 
   const uploadFiles = async (files: FileList | null) => {
@@ -658,16 +719,49 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
             </div>
           </div>
           
-          <div className="flex gap-3">
+          <div className="flex gap-3 relative">
             <button 
-              onClick={onEdit}
+              onClick={openCourseEditor}
               className="px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-xl text-sm font-medium transition-colors"
             >
               Edit Course
             </button>
-            <button className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-xl transition-colors">
+            <button
+              type="button"
+              onClick={() => setShowCourseMenu(v => !v)}
+              className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-xl transition-colors"
+            >
               <MoreVertical className="w-5 h-5" />
             </button>
+            {showCourseMenu && (
+              <>
+                <button
+                  type="button"
+                  className="fixed inset-0 z-10 cursor-default"
+                  onClick={() => setShowCourseMenu(false)}
+                  aria-label="Close course menu"
+                />
+                <div className="absolute right-0 top-12 z-20 w-44 bg-white border border-slate-200 rounded-2xl shadow-lg p-2">
+                  <button
+                    type="button"
+                    onClick={openCourseEditor}
+                    className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Course info
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCourseMenu(false);
+                      setShowDeleteCourseConfirm(true);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-rose-700 hover:bg-rose-50"
+                  >
+                    Delete course
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
         
@@ -2006,6 +2100,135 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
         </div>
       )}
 
+      {showEditCourseModal && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
+            onClick={() => setShowEditCourseModal(false)}
+            aria-label="Close course editor"
+          />
+          <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-slate-100">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Course info</div>
+                <div className="text-lg font-bold text-slate-800">Edit course</div>
+                <div className="text-xs text-slate-500 mt-1">Update class details shown across calendar, activities, and goals.</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEditCourseModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
+                title="Close"
+              >
+                <span className="text-lg leading-none">×</span>
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Course code</label>
+                  <input
+                    value={courseDraft.code}
+                    onChange={e => setCourseDraft(prev => ({ ...prev, code: e.target.value }))}
+                    placeholder="e.g. CS101"
+                    className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Instructor</label>
+                  <input
+                    value={courseDraft.instructor}
+                    onChange={e => setCourseDraft(prev => ({ ...prev, instructor: e.target.value }))}
+                    placeholder="e.g. Dr. Smith"
+                    className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Course name</label>
+                  <input
+                    value={courseDraft.name}
+                    onChange={e => setCourseDraft(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g. Computer Science 101"
+                    className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <DatePicker
+                    label="Start date"
+                    value={courseDraft.startDate}
+                    onChange={(next) => {
+                      setCourseDraft(prev => {
+                        const endTooEarly = prev.endDate && next && prev.endDate < next;
+                        return { ...prev, startDate: next, endDate: endTooEarly ? '' : prev.endDate };
+                      });
+                    }}
+                    placeholder="Select start"
+                    max={courseDraft.endDate || undefined}
+                  />
+                </div>
+                <div>
+                  <DatePicker
+                    label="End date"
+                    value={courseDraft.endDate}
+                    onChange={(next) => setCourseDraft(prev => ({ ...prev, endDate: next }))}
+                    placeholder="Select end"
+                    min={courseDraft.startDate || undefined}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Color</label>
+                <div className="flex flex-wrap gap-2">
+                  {courseColorOptions.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setCourseDraft(prev => ({ ...prev, color: c }))}
+                      className={`h-9 w-9 rounded-xl ${c} border transition-all ${courseDraft.color === c ? 'ring-2 ring-indigo-500/30 border-white' : 'border-white/0 hover:ring-2 hover:ring-slate-300/40'}`}
+                      title={c}
+                      aria-pressed={courseDraft.color === c}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowEditCourseModal(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveCourseDetails}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-colors"
+              >
+                Save changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={showDeleteCourseConfirm}
+        title="Delete course?"
+        message={`"${course.code} ${course.name}" will be deleted from your planner.`}
+        confirmLabel="Delete course"
+        onCancel={() => setShowDeleteCourseConfirm(false)}
+        onConfirm={() => {
+          if (!onDeleteCourse) return;
+          onDeleteCourse(course.id);
+          setShowDeleteCourseConfirm(false);
+        }}
+      />
+
       <ConfirmDialog
         open={Boolean(pendingAssignmentDelete)}
         title="Delete assignment?"
@@ -2018,6 +2241,28 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
         onCancel={() => setPendingAssignmentDelete(null)}
         onConfirm={() => {
           if (!pendingAssignmentDelete) return;
+          const series = assignments.filter(a =>
+            a.id !== pendingAssignmentDelete.id &&
+            a.courseId === pendingAssignmentDelete.courseId &&
+            a.title.trim().toLowerCase() === pendingAssignmentDelete.title.trim().toLowerCase()
+          );
+          if (series.length > 0) {
+            const deleteAll = window.confirm(
+              `This looks like a recurring series (${series.length + 1} items).\n\nPress OK to delete all.\nPress Cancel to delete only this one.`
+            );
+            if (deleteAll) {
+              onAssignmentsChange(
+                assignments.filter(a => !(
+                  a.courseId === pendingAssignmentDelete.courseId &&
+                  a.title.trim().toLowerCase() === pendingAssignmentDelete.title.trim().toLowerCase()
+                ))
+              );
+              if (selectedAssignmentId === pendingAssignmentDelete.id) setSelectedAssignmentId(null);
+              setPendingAssignmentDelete(null);
+              toast('Recurring assignments deleted');
+              return;
+            }
+          }
           onAssignmentsChange(assignments.filter(a => a.id !== pendingAssignmentDelete.id));
           if (selectedAssignmentId === pendingAssignmentDelete.id) setSelectedAssignmentId(null);
           setPendingAssignmentDelete(null);

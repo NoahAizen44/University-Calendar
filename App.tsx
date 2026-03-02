@@ -563,6 +563,22 @@ const App: React.FC = () => {
                 course={course}
                  calendars={calendars}
                  onCourseChange={(nextCourse) => setCourses(prev => prev.map(c => (c.id === nextCourse.id ? nextCourse : c)))}
+                onDeleteCourse={(courseId) => {
+                  const removed = courses.find(c => c.id === courseId);
+                  setCourses(prev => prev.filter(c => c.id !== courseId));
+                  setAssignments(prev => prev.filter(a => a.courseId !== courseId));
+                  setNotes(prev => prev.filter(n => n.courseId !== courseId));
+                  setResources(prev => prev.filter(r => r.courseId !== courseId));
+                  setEvents(prev => prev.filter(e => e.courseId !== courseId));
+                  if (removed?.calendarId) {
+                    const stillUsed = courses.some(c => c.id !== courseId && c.calendarId === removed.calendarId);
+                    if (!stillUsed) {
+                      setCalendars(prev => prev.filter(cal => cal.id !== removed.calendarId));
+                    }
+                  }
+                  setSelectedCourseId(null);
+                  toast('Course deleted');
+                }}
                 assignments={assignments}
                 events={events}
                 notes={notes}
@@ -572,10 +588,6 @@ const App: React.FC = () => {
                 onNotesChange={setNotes}
                 onResourcesChange={setResources}
                 onBack={() => setSelectedCourseId(null)}
-                onEdit={() => {
-                  // Placeholder: later we can open an edit modal
-                  alert('Edit course coming soon');
-                }}
               />
             );
           })()}
