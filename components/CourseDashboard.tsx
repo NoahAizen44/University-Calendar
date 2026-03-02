@@ -698,7 +698,7 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
       </div>
 
       {/* Hero Banner */}
-      <div className={`relative overflow-hidden rounded-2xl p-8 text-white shadow-lg ${course.color}`}>
+      <div className={`relative overflow-visible rounded-2xl p-8 text-white shadow-lg ${course.color}`}>
         <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
           <div>
             <div className="inline-block px-3 py-1 rounded-lg bg-white/20 backdrop-blur-sm text-xs font-bold uppercase tracking-wider mb-3">
