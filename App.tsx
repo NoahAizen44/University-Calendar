@@ -8,7 +8,9 @@ import {
   Settings, 
   UserCircle2,
   Clock,
-  Layers
+  Layers,
+  ChevronDown,
+  ClipboardCheck
 } from 'lucide-react';
 import { Course, Assignment, StudySession, UniCalendar, CalendarEvent, CourseNote, CourseResource, RecurringTask, PlannerState } from './types';
 import CalendarView from './components/CalendarView';
@@ -33,7 +35,7 @@ function getAssignmentDueEventId(assignmentId: string) {
 }
 
 type CalendarScope = 'all' | 'academic' | 'personal';
-type AppTab = 'calendar' | 'courses' | 'assignments' | 'personal' | 'goals' | 'settings' | 'account';
+type AppTab = 'calendar' | 'courses' | 'assignments' | 'events' | 'exams' | 'personal' | 'goals' | 'settings' | 'account';
 
 const LEGACY_SAMPLE_CALENDAR_IDS = new Set(['cal_1', 'cal_personal']);
 const LEGACY_SAMPLE_CALENDAR_NAMES = new Set(['semester']);
@@ -56,6 +58,7 @@ const ASSISTANT_COLOR_POOL = ['bg-indigo-500', 'bg-blue-500', 'bg-emerald-500', 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>('calendar');
   const [calendarScope, setCalendarScope] = useState<CalendarScope>('all');
+  const [activitiesOpen, setActivitiesOpen] = useState(true);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
@@ -419,9 +422,33 @@ const App: React.FC = () => {
   };
 
   const tabTitle = useMemo(() => {
+    if (activeTab === 'events') return 'Events';
+    if (activeTab === 'exams') return 'Exams';
     if (activeTab === 'personal') return 'Personal';
     return activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
   }, [activeTab]);
+
+  const activityTabs: AppTab[] = ['assignments', 'events', 'exams'];
+  const activityEvents = useMemo(
+    () => events.filter(e => e.source !== 'assignment').sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+    [events]
+  );
+  const examAssignments = useMemo(
+    () =>
+      assignments.filter(a => {
+        const t = a.title.toLowerCase();
+        return t.includes('exam') || t.includes('midterm') || t.includes('final') || t.includes('quiz');
+      }),
+    [assignments]
+  );
+  const examEvents = useMemo(
+    () =>
+      activityEvents.filter(e => {
+        const t = e.title.toLowerCase();
+        return t.includes('exam') || t.includes('midterm') || t.includes('final') || t.includes('quiz');
+      }),
+    [activityEvents]
+  );
 
   return (
     <div className="flex h-screen bg-slate-50">
@@ -441,12 +468,28 @@ const App: React.FC = () => {
               active={activeTab === 'calendar'} 
               onClick={() => handleNavigate('calendar')} 
             />
-            <NavItem 
-              icon={<CheckSquare className="w-5 h-5" />} 
-              label="Assignments" 
-              active={activeTab === 'assignments'} 
-              onClick={() => handleNavigate('assignments')} 
-            />
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => setActivitiesOpen(v => !v)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                  activityTabs.includes(activeTab)
+                    ? 'bg-indigo-50 text-indigo-600 font-semibold'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                }`}
+              >
+                <CheckSquare className="w-5 h-5" />
+                <span className="text-sm flex-1 text-left">Activities</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${activitiesOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {activitiesOpen && (
+                <div className="ml-4 pl-3 border-l border-slate-200 space-y-1">
+                  <SubNavItem label="Assignments" active={activeTab === 'assignments'} onClick={() => handleNavigate('assignments')} />
+                  <SubNavItem label="Events" active={activeTab === 'events'} onClick={() => handleNavigate('events')} />
+                  <SubNavItem label="Exams" active={activeTab === 'exams'} onClick={() => handleNavigate('exams')} />
+                </div>
+              )}
+            </div>
             <NavItem 
               icon={<BookOpen className="w-5 h-5" />} 
               label="Courses" 
@@ -587,6 +630,76 @@ const App: React.FC = () => {
             />
           )}
 
+          {activeTab === 'events' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-slate-800">Events</h2>
+                <button
+                  type="button"
+                  onClick={() => handleNavigate('calendar')}
+                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all"
+                >
+                  Open Calendar
+                </button>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                {activityEvents.length === 0 ? (
+                  <div className="py-16 text-center text-slate-500">No events yet.</div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {activityEvents.map(ev => (
+                      <div key={ev.id} className="p-4">
+                        <div className="font-semibold text-slate-800">{ev.title}</div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          {new Date(ev.startTime).toLocaleString()} - {new Date(ev.endTime).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'exams' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <ClipboardCheck className="w-5 h-5 text-indigo-600" />
+                <h2 className="text-2xl font-bold text-slate-800">Exams</h2>
+              </div>
+              {examAssignments.length === 0 && examEvents.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm py-16 text-center text-slate-500">
+                  No exams yet. Create an assignment/event with \"exam\", \"quiz\", \"midterm\", or \"final\" in the title.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 font-semibold text-slate-800">Exam assignments</div>
+                    <div className="divide-y divide-slate-100">
+                      {examAssignments.map(a => (
+                        <div key={a.id} className="p-4">
+                          <div className="font-semibold text-slate-800">{a.title}</div>
+                          <div className="text-xs text-slate-500 mt-1">Due {new Date(a.dueDate).toLocaleDateString()}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 font-semibold text-slate-800">Exam events</div>
+                    <div className="divide-y divide-slate-100">
+                      {examEvents.map(e => (
+                        <div key={e.id} className="p-4">
+                          <div className="font-semibold text-slate-800">{e.title}</div>
+                          <div className="text-xs text-slate-500 mt-1">{new Date(e.startTime).toLocaleString()}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'courses' && (
             <CourseManager courses={courses} onUpdate={setCourses} onOpenCourse={(id) => setSelectedCourseId(id)} />
           )}
@@ -655,6 +768,18 @@ const NavItem: React.FC<{ icon: React.ReactNode; label: string; active?: boolean
   >
     {icon}
     <span className="text-sm">{label}</span>
+  </button>
+);
+
+const SubNavItem: React.FC<{ label: string; active?: boolean; onClick: () => void }> = ({ label, active, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+      active ? 'bg-indigo-100 text-indigo-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+    }`}
+  >
+    {label}
   </button>
 );
 
