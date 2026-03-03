@@ -179,7 +179,7 @@ const GroupDashboard: React.FC<Props> = ({ group, events, onBack, onUpdateGroups
     const start = parseLocalDateTime(draft.date, draft.start);
     const end = parseLocalDateTime(draft.date, draft.end);
     if (end.getTime() <= start.getTime()) {
-      alert('End time must be after start time');
+      toast('End time must be after start time');
       return;
     }
 

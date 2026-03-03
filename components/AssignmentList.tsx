@@ -3,6 +3,7 @@ import { Filter, Plus, Search } from 'lucide-react';
 import type { Assignment, Course, RecurringTask } from '../types';
 import AddTaskModal from './AddTaskModal';
 import AssignmentEditModal from './AssignmentEditModal';
+import ConfirmDialog from './ConfirmDialog';
 
 interface AssignmentListProps {
   assignments: Assignment[];
@@ -20,6 +21,11 @@ const AssignmentList: React.FC<AssignmentListProps> = ({ assignments, courses, o
   const [nextRecurringOnly, setNextRecurringOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [pendingDeleteSeriesChoice, setPendingDeleteSeriesChoice] = useState<{
+    assignmentId: string;
+    title: string;
+    seriesCount: number;
+  } | null>(null);
 
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const selectedAssignment = useMemo(
@@ -96,6 +102,24 @@ const AssignmentList: React.FC<AssignmentListProps> = ({ assignments, courses, o
   const savePatch = (id: string, patch: Partial<Assignment>) => {
     if (!onChange) return;
     onChange(assignments.map(a => (a.id === id ? { ...a, ...patch } : a)));
+  };
+
+  const deleteAssignment = (assignmentId: string, deleteAllInSeries: boolean) => {
+    if (!onChange) return;
+    const target = assignments.find(a => a.id === assignmentId);
+    if (!target) return;
+    if (deleteAllInSeries) {
+      onChange(
+        assignments.filter(a => !(
+          a.courseId === target.courseId &&
+          a.title.trim().toLowerCase() === target.title.trim().toLowerCase()
+        ))
+      );
+    } else {
+      onChange(assignments.filter(a => a.id !== assignmentId));
+    }
+    setSelectedAssignmentId(null);
+    setPendingDeleteSeriesChoice(null);
   };
 
   return (
@@ -251,27 +275,40 @@ const AssignmentList: React.FC<AssignmentListProps> = ({ assignments, courses, o
           );
 
           if (series.length > 0) {
-            const deleteAll = window.confirm(
-              `This looks like a recurring series (${series.length + 1} items).\n\nPress OK to delete all.\nPress Cancel to delete only this one.`
-            );
-            if (deleteAll) {
-              onChange(
-                assignments.filter(a => !(
-                  a.courseId === target.courseId &&
-                  a.title.trim().toLowerCase() === target.title.trim().toLowerCase()
-                ))
-              );
-              setSelectedAssignmentId(null);
-              return;
-            }
+            setPendingDeleteSeriesChoice({
+              assignmentId,
+              title: target.title,
+              seriesCount: series.length + 1,
+            });
+            return;
           }
 
-          onChange(assignments.filter(a => a.id !== assignmentId));
-          setSelectedAssignmentId(null);
+          deleteAssignment(assignmentId, false);
         }}
         onSave={patch => {
           if (!selectedAssignment) return;
           savePatch(selectedAssignment.id, patch);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingDeleteSeriesChoice)}
+        title="Delete recurring assignments?"
+        message={
+          pendingDeleteSeriesChoice
+            ? `"${pendingDeleteSeriesChoice.title}" belongs to a recurring series (${pendingDeleteSeriesChoice.seriesCount} items).`
+            : ''
+        }
+        confirmLabel="Delete all"
+        secondaryLabel="Delete this one"
+        onCancel={() => setPendingDeleteSeriesChoice(null)}
+        onSecondary={() => {
+          if (!pendingDeleteSeriesChoice) return;
+          deleteAssignment(pendingDeleteSeriesChoice.assignmentId, false);
+        }}
+        onConfirm={() => {
+          if (!pendingDeleteSeriesChoice) return;
+          deleteAssignment(pendingDeleteSeriesChoice.assignmentId, true);
         }}
       />
     </div>

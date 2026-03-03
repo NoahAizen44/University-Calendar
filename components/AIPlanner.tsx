@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Sparkles, Loader2 } from 'lucide-react';
 import { Assignment, Course, StudySession } from '../types';
 import { generateStudyPlan } from '../services/geminiService';
+import { toast } from '../services/toast';
 
 interface AIPlannerProps {
   assignments: Assignment[];
@@ -21,7 +22,7 @@ const AIPlanner: React.FC<AIPlannerProps> = ({ assignments, courses, onScheduleG
       onScheduleGenerated(sessions);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Something went wrong with the AI planner. Please try again.");
+      toast(error instanceof Error ? error.message : 'Something went wrong with the AI planner. Please try again.');
     } finally {
       setLoading(false);
     }

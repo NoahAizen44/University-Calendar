@@ -108,7 +108,7 @@ const AssignmentEditModal: React.FC<AssignmentEditModalProps> = ({ open, assignm
   const openAttachment = async (att: AssignmentAttachment) => {
     const blob = await getBlob(att.blobId);
     if (!blob) {
-      alert('File blob missing (storage cleared?)');
+      toast('File attachment is missing. It may have been cleared from local storage.');
       return;
     }
     const url = URL.createObjectURL(blob);
@@ -119,7 +119,7 @@ const AssignmentEditModal: React.FC<AssignmentEditModalProps> = ({ open, assignm
   const downloadAttachment = async (att: AssignmentAttachment) => {
     const blob = await getBlob(att.blobId);
     if (!blob) {
-      alert('File blob missing (storage cleared?)');
+      toast('File attachment is missing. It may have been cleared from local storage.');
       return;
     }
     const url = URL.createObjectURL(blob);

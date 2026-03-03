@@ -49,12 +49,12 @@ const CourseManager: React.FC<CourseManagerProps> = ({ courses, onUpdate, onOpen
     const endDate = draft.endDate.trim();
 
     if (!code || !name) {
-      alert('Please enter a course code and name.');
+      toast('Please enter a course code and name.');
       return;
     }
 
     if (courses.some(c => c.code.trim().toUpperCase() === code)) {
-      alert('A course with that code already exists.');
+      toast('A course with that code already exists.');
       return;
     }
 
@@ -62,7 +62,7 @@ const CourseManager: React.FC<CourseManagerProps> = ({ courses, onUpdate, onOpen
       const s = new Date(startDate);
       const e = new Date(endDate);
       if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && s.getTime() > e.getTime()) {
-        alert('Start date must be before end date.');
+        toast('Start date must be before end date.');
         return;
       }
     }

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Check, Plus, Trash2 } from 'lucide-react';
 import type { UniCalendar } from '../types';
 import { uid } from '../services/id';
+import { toast } from '../services/toast';
 
 const COLOR_OPTIONS: Array<{ label: string; value: string }> = [
   { label: 'Indigo', value: 'bg-indigo-500' },
@@ -42,7 +43,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ calendars, onUpdate, 
     const trimmed = name.trim();
     if (!trimmed) return;
     if (usedNames.has(trimmed.toLowerCase())) {
-      alert('Calendar name already exists');
+      toast('Calendar name already exists');
       return;
     }
 

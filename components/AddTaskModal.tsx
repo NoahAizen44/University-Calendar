@@ -4,6 +4,7 @@ import { Assignment, AssignmentAttachment, Course, Priority, RecurringTask } fro
 import DatePicker from './DatePicker';
 import { uid } from '../services/id';
 import { putBlob, getBlob, deleteBlob } from '../services/idb';
+import { toast } from '../services/toast';
 
 const INDEPENDENT_COURSE_ID = '__independent__';
 
@@ -244,7 +245,7 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, courses, initialCours
   const openAttachment = async (att: AssignmentAttachment) => {
     const blob = await getBlob(att.blobId);
     if (!blob) {
-      alert('File blob missing (storage cleared?)');
+      toast('File attachment is missing. It may have been cleared from local storage.');
       return;
     }
     const url = URL.createObjectURL(blob);
@@ -511,7 +512,7 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, courses, initialCours
                       <button
                         type="button"
                         onClick={() => {
-                          alert('AI Custom recurrence is coming soon. For now, use Daily or Weekly.');
+                          toast('AI custom recurrence is coming soon. For now, use Daily or Weekly.');
                         }}
                         className="px-3 py-2 rounded-xl border text-xs font-bold uppercase tracking-wider bg-white text-slate-400 border-slate-200 cursor-not-allowed"
                         title="Coming soon"

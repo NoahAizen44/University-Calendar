@@ -218,6 +218,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   const addAssignmentInitialCourseId = initialAssignmentCourseId;
 
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
+  const [pendingAssignmentDeleteSeriesChoice, setPendingAssignmentDeleteSeriesChoice] = useState<{
+    assignmentId: string;
+    title: string;
+    seriesCount: number;
+  } | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [showDeleteEventConfirm, setShowDeleteEventConfirm] = useState(false);
   const [showDeleteEventSeriesChoice, setShowDeleteEventSeriesChoice] = useState(false);
@@ -267,6 +272,23 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   );
 
   // Assignment edit UI is handled by the shared AssignmentEditModal.
+  const deleteAssignment = (assignmentId: string, deleteAllInSeries: boolean) => {
+    if (!onAssignmentsChange) return;
+    const target = assignments.find(a => a.id === assignmentId);
+    if (!target) return;
+    if (deleteAllInSeries) {
+      onAssignmentsChange(
+        assignments.filter(a => !(
+          a.courseId === target.courseId &&
+          a.title.trim().toLowerCase() === target.title.trim().toLowerCase()
+        ))
+      );
+    } else {
+      onAssignmentsChange(assignments.filter(a => a.id !== assignmentId));
+    }
+    setSelectedAssignmentId(null);
+    setPendingAssignmentDeleteSeriesChoice(null);
+  };
 
   const selectedEvent = useMemo(
     () => {
@@ -1410,22 +1432,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({
             a.title.trim().toLowerCase() === target.title.trim().toLowerCase()
           );
           if (series.length > 0) {
-            const deleteAll = window.confirm(
-              `This looks like a recurring series (${series.length + 1} items).\n\nPress OK to delete all.\nPress Cancel to delete only this one.`
-            );
-            if (deleteAll) {
-              onAssignmentsChange(
-                assignments.filter(a => !(
-                  a.courseId === target.courseId &&
-                  a.title.trim().toLowerCase() === target.title.trim().toLowerCase()
-                ))
-              );
-              setSelectedAssignmentId(null);
-              return;
-            }
+            setPendingAssignmentDeleteSeriesChoice({
+              assignmentId,
+              title: target.title,
+              seriesCount: series.length + 1,
+            });
+            return;
           }
-          onAssignmentsChange(assignments.filter(a => a.id !== assignmentId));
-          setSelectedAssignmentId(null);
+          deleteAssignment(assignmentId, false);
         }}
         onSave={patch => {
           if (!selectedAssignment) return;
@@ -1444,6 +1458,27 @@ const CalendarView: React.FC<CalendarViewProps> = ({
           if (!('dueDate' in item)) return;
           onAddAssignment(item as Omit<Assignment, 'id'>);
           setAddAssignmentOpen(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingAssignmentDeleteSeriesChoice)}
+        title="Delete recurring assignments?"
+        message={
+          pendingAssignmentDeleteSeriesChoice
+            ? `"${pendingAssignmentDeleteSeriesChoice.title}" belongs to a recurring series (${pendingAssignmentDeleteSeriesChoice.seriesCount} items).`
+            : ''
+        }
+        confirmLabel="Delete all"
+        secondaryLabel="Delete this one"
+        onCancel={() => setPendingAssignmentDeleteSeriesChoice(null)}
+        onSecondary={() => {
+          if (!pendingAssignmentDeleteSeriesChoice) return;
+          deleteAssignment(pendingAssignmentDeleteSeriesChoice.assignmentId, false);
+        }}
+        onConfirm={() => {
+          if (!pendingAssignmentDeleteSeriesChoice) return;
+          deleteAssignment(pendingAssignmentDeleteSeriesChoice.assignmentId, true);
         }}
       />
 

@@ -111,6 +111,8 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
   const [pendingAssignmentDelete, setPendingAssignmentDelete] = useState<Assignment | null>(null);
   const [pendingAttachmentDelete, setPendingAttachmentDelete] = useState<{ assignmentId: string; attachment: AssignmentAttachment } | null>(null);
   const [pendingResourceDelete, setPendingResourceDelete] = useState<CourseResource | null>(null);
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
+  const [folderNameDraft, setFolderNameDraft] = useState('');
   const [showCourseMenu, setShowCourseMenu] = useState(false);
   const [showEditCourseModal, setShowEditCourseModal] = useState(false);
   const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState(false);
@@ -289,7 +291,7 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
   const openAssignmentAttachment = async (att: AssignmentAttachment) => {
     const blob = await getBlob(att.blobId);
     if (!blob) {
-      alert('File blob missing (storage cleared?)');
+      toast('File attachment is missing. It may have been cleared from local storage.');
       return;
     }
     const url = URL.createObjectURL(blob);
@@ -300,7 +302,7 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
   const downloadAssignmentAttachment = async (att: AssignmentAttachment) => {
     const blob = await getBlob(att.blobId);
     if (!blob) {
-      alert('File blob missing (storage cleared?)');
+      toast('File attachment is missing. It may have been cleared from local storage.');
       return;
     }
     const url = URL.createObjectURL(blob);
@@ -543,19 +545,30 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
   };
 
   const createFolder = () => {
-    const name = prompt('Folder name');
-    if (!name) return;
+    setFolderNameDraft('');
+    setShowCreateFolderModal(true);
+  };
+
+  const submitCreateFolder = () => {
+    const name = folderNameDraft.trim();
+    if (!name) {
+      toast('Please enter a folder name.');
+      return;
+    }
     const now = new Date().toISOString();
     const folder: CourseResourceFolder = {
       id: uid('fld'),
       courseId: course.id,
       kind: 'folder',
       parentId: activeFolderId,
-      name: name.trim(),
+      name,
       createdAt: now,
       updatedAt: now,
     };
     onResourcesChange([...resources, folder]);
+    setShowCreateFolderModal(false);
+    setFolderNameDraft('');
+    toast('Folder created');
   };
 
   const openCourseEditor = () => {
@@ -569,14 +582,14 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
     const name = courseDraft.name.trim();
     const instructor = courseDraft.instructor.trim();
     if (!code || !name) {
-      alert('Please enter a course code and name.');
+      toast('Please enter a course code and name.');
       return;
     }
     if (courseDraft.startDate && courseDraft.endDate) {
       const s = new Date(courseDraft.startDate);
       const e = new Date(courseDraft.endDate);
       if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && s.getTime() > e.getTime()) {
-        alert('Start date must be before end date.');
+        toast('Start date must be before end date.');
         return;
       }
     }
@@ -623,7 +636,7 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
   const openFile = async (file: CourseResourceFile) => {
     const blob = await getBlob(file.blobId);
     if (!blob) {
-      alert('File blob missing (storage cleared?)');
+      toast('File is missing. It may have been cleared from local storage.');
       return;
     }
     const url = URL.createObjectURL(blob);
@@ -635,7 +648,7 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
   const downloadFile = async (file: CourseResourceFile) => {
     const blob = await getBlob(file.blobId);
     if (!blob) {
-      alert('File blob missing (storage cleared?)');
+      toast('File is missing. It may have been cleared from local storage.');
       return;
     }
     const url = URL.createObjectURL(blob);
@@ -2100,6 +2113,55 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
         </div>
       )}
 
+      {showCreateFolderModal && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
+            onClick={() => setShowCreateFolderModal(false)}
+            aria-label="Close folder dialog"
+          />
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl">
+            <div className="px-6 py-5 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900">New folder</h3>
+              <p className="mt-1 text-sm text-slate-500">Create a folder in the current location.</p>
+            </div>
+            <div className="px-6 py-5">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Folder name</label>
+              <input
+                autoFocus
+                value={folderNameDraft}
+                onChange={(e) => setFolderNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submitCreateFolder();
+                  }
+                }}
+                className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                placeholder="e.g. Week 3"
+              />
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCreateFolderModal(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitCreateFolder}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-colors"
+              >
+                Create folder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showEditCourseModal && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
           <button
@@ -2234,11 +2296,41 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
         title="Delete assignment?"
         message={
           pendingAssignmentDelete
-            ? `"${pendingAssignmentDelete.title}" will be removed from this course.`
+            ? (() => {
+                const seriesCount = assignments.filter(a =>
+                  a.courseId === pendingAssignmentDelete.courseId &&
+                  a.title.trim().toLowerCase() === pendingAssignmentDelete.title.trim().toLowerCase()
+                ).length;
+                return seriesCount > 1
+                  ? `"${pendingAssignmentDelete.title}" is part of a recurring series (${seriesCount} items).`
+                  : `"${pendingAssignmentDelete.title}" will be removed from this course.`;
+              })()
             : ''
         }
-        confirmLabel="Delete assignment"
+        confirmLabel={
+          pendingAssignmentDelete && assignments.filter(a =>
+            a.courseId === pendingAssignmentDelete.courseId &&
+            a.title.trim().toLowerCase() === pendingAssignmentDelete.title.trim().toLowerCase()
+          ).length > 1
+            ? 'Delete all'
+            : 'Delete assignment'
+        }
+        secondaryLabel={
+          pendingAssignmentDelete && assignments.filter(a =>
+            a.courseId === pendingAssignmentDelete.courseId &&
+            a.title.trim().toLowerCase() === pendingAssignmentDelete.title.trim().toLowerCase()
+          ).length > 1
+            ? 'Delete this one'
+            : undefined
+        }
         onCancel={() => setPendingAssignmentDelete(null)}
+        onSecondary={() => {
+          if (!pendingAssignmentDelete) return;
+          onAssignmentsChange(assignments.filter(a => a.id !== pendingAssignmentDelete.id));
+          if (selectedAssignmentId === pendingAssignmentDelete.id) setSelectedAssignmentId(null);
+          setPendingAssignmentDelete(null);
+          toast('Assignment deleted');
+        }}
         onConfirm={() => {
           if (!pendingAssignmentDelete) return;
           const series = assignments.filter(a =>
@@ -2247,21 +2339,16 @@ const CourseDashboard: React.FC<CourseDashboardProps> = ({
             a.title.trim().toLowerCase() === pendingAssignmentDelete.title.trim().toLowerCase()
           );
           if (series.length > 0) {
-            const deleteAll = window.confirm(
-              `This looks like a recurring series (${series.length + 1} items).\n\nPress OK to delete all.\nPress Cancel to delete only this one.`
+            onAssignmentsChange(
+              assignments.filter(a => !(
+                a.courseId === pendingAssignmentDelete.courseId &&
+                a.title.trim().toLowerCase() === pendingAssignmentDelete.title.trim().toLowerCase()
+              ))
             );
-            if (deleteAll) {
-              onAssignmentsChange(
-                assignments.filter(a => !(
-                  a.courseId === pendingAssignmentDelete.courseId &&
-                  a.title.trim().toLowerCase() === pendingAssignmentDelete.title.trim().toLowerCase()
-                ))
-              );
-              if (selectedAssignmentId === pendingAssignmentDelete.id) setSelectedAssignmentId(null);
-              setPendingAssignmentDelete(null);
-              toast('Recurring assignments deleted');
-              return;
-            }
+            if (selectedAssignmentId === pendingAssignmentDelete.id) setSelectedAssignmentId(null);
+            setPendingAssignmentDelete(null);
+            toast('Recurring assignments deleted');
+            return;
           }
           onAssignmentsChange(assignments.filter(a => a.id !== pendingAssignmentDelete.id));
           if (selectedAssignmentId === pendingAssignmentDelete.id) setSelectedAssignmentId(null);
