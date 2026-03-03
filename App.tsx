@@ -35,6 +35,31 @@ function getAssignmentDueEventId(assignmentId: string) {
   return `asg_due_${assignmentId}`;
 }
 
+function parseAssistantDateTimeLocal(input?: string) {
+  if (!input) return null;
+  const raw = input.trim();
+  if (!raw) return null;
+
+  // Treat assistant-provided timestamps as local wall-clock time.
+  // This avoids timezone shifts when models return UTC/Z offsets.
+  const m = raw.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?)?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/
+  );
+  if (m) {
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    const hour = Number(m[4] ?? '0');
+    const minute = Number(m[5] ?? '0');
+    const second = Number(m[6] ?? '0');
+    const d = new Date(year, month - 1, day, hour, minute, second, 0);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const fallback = new Date(raw);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
 type CalendarScope = 'all' | 'academic' | 'personal';
 type AppTab = 'calendar' | 'courses' | 'assignments' | 'events' | 'exams' | 'personal' | 'goals' | 'settings' | 'account';
 
@@ -77,6 +102,23 @@ const App: React.FC = () => {
   const [studySessions, setStudySessions] = useState<StudySession[]>([]);
   const [notes, setNotes] = useState<CourseNote[]>([]);
   const [resources, setResources] = useState<CourseResource[]>([]);
+  const [assistantPreview, setAssistantPreview] = useState<null | {
+    actions: AssistantAction[];
+    nextAssignments: Assignment[];
+    nextEvents: CalendarEvent[];
+    nextCourses: Course[];
+    nextCalendars: UniCalendar[];
+    nextNotes: CourseNote[];
+    nextResources: CourseResource[];
+    createdAssignments: number;
+    createdEvents: number;
+    createdCourses: number;
+    reassignedEvents: number;
+    deletedAssignments: number;
+    deletedEvents: number;
+    deletedCourses: number;
+    deletedItems: string[];
+  }>(null);
   const [authSession, setAuthSession] = useState<AuthSession | null>(() => loadStoredSession());
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle');
   const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
@@ -309,15 +351,31 @@ const App: React.FC = () => {
       .map(e => e.id);
   };
 
-  const executeAssistantActions = async (actions: AssistantAction[]) => {
+  const resolveAssignmentIdsByRef = (ref?: string, assignmentList: Assignment[] = assignments) => {
+    if (!ref) return [];
+    const needle = ref.trim().toLowerCase();
+    const exactById = assignmentList.find(a => a.id.toLowerCase() === needle);
+    if (exactById) return [exactById.id];
+    return assignmentList
+      .filter(a => a.title.trim().toLowerCase().includes(needle))
+      .map(a => a.id);
+  };
+
+  const simulateAssistantActions = (actions: AssistantAction[]) => {
     let nextAssignments = [...assignments];
     let nextEvents = [...events];
     let nextCourses = [...courses];
     let nextCalendars = [...calendars];
+    let nextNotes = [...notes];
+    let nextResources = [...resources];
     let createdAssignments = 0;
     let createdEvents = 0;
     let createdCourses = 0;
     let reassignedEvents = 0;
+    let deletedAssignments = 0;
+    let deletedEvents = 0;
+    let deletedCourses = 0;
+    const deletedItems: string[] = [];
 
     for (const action of actions) {
       if (action.type === 'create_assignment') {
@@ -341,8 +399,9 @@ const App: React.FC = () => {
       }
 
       if (action.type === 'create_event' || action.type === 'create_exam') {
-        const start = new Date(action.startTime);
-        const end = new Date(action.endTime);
+        const start = parseAssistantDateTimeLocal(action.startTime);
+        const end = parseAssistantDateTimeLocal(action.endTime);
+        if (!start || !end) continue;
         if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end.getTime() <= start.getTime()) continue;
         const resolvedCourse = resolveCourseByRef(action.courseRef, nextCourses);
         const resolvedCalendar =
@@ -421,22 +480,207 @@ const App: React.FC = () => {
             : e
         ));
         reassignedEvents += targetEventIds.length;
+        continue;
+      }
+
+      if (action.type === 'delete_assignment') {
+        const targetIds = resolveAssignmentIdsByRef(action.assignmentRef, nextAssignments);
+        if (targetIds.length === 0) continue;
+        const toDelete = new Set<string>();
+        for (const assignmentId of targetIds) {
+          const target = nextAssignments.find(a => a.id === assignmentId);
+          if (!target) continue;
+          if (action.deleteSeries) {
+            for (const item of nextAssignments) {
+              if (
+                item.courseId === target.courseId &&
+                item.title.trim().toLowerCase() === target.title.trim().toLowerCase()
+              ) {
+                toDelete.add(item.id);
+              }
+            }
+          } else {
+            toDelete.add(target.id);
+          }
+        }
+        if (toDelete.size === 0) continue;
+        const removed = nextAssignments.filter(a => toDelete.has(a.id));
+        nextAssignments = nextAssignments.filter(a => !toDelete.has(a.id));
+        deletedAssignments += removed.length;
+        for (const a of removed.slice(0, 12)) {
+          deletedItems.push(`Assignment: ${a.title}`);
+        }
+        continue;
+      }
+
+      if (action.type === 'delete_event') {
+        const targetIds = resolveEventIdsByRef(action.eventRef, nextEvents);
+        if (targetIds.length === 0) continue;
+        const toDelete = new Set<string>();
+        for (const eventId of targetIds) {
+          const target = nextEvents.find(e => e.id === eventId);
+          if (!target) continue;
+          if (action.deleteSeries) {
+            const baseId = eventId.replace(/_\d{4}-\d{1,2}-\d{1,2}$/, '');
+            for (const item of nextEvents) {
+              if (item.id === baseId || item.id.startsWith(`${baseId}_`)) {
+                toDelete.add(item.id);
+              }
+            }
+          } else {
+            toDelete.add(target.id);
+          }
+        }
+        if (toDelete.size === 0) continue;
+        const removed = nextEvents.filter(e => toDelete.has(e.id));
+        nextEvents = nextEvents.filter(e => !toDelete.has(e.id));
+        deletedEvents += removed.length;
+        for (const e of removed.slice(0, 12)) {
+          deletedItems.push(`Event: ${e.title} (${new Date(e.startTime).toLocaleString()})`);
+        }
+        continue;
+      }
+
+      if (action.type === 'delete_course') {
+        const target = resolveCourseByRef(action.courseRef, nextCourses);
+        if (!target) continue;
+
+        nextCourses = nextCourses.filter(c => c.id !== target.id);
+        const removedAssignments = nextAssignments.filter(a => a.courseId === target.id);
+        const removedEvents = nextEvents.filter(e => e.courseId === target.id);
+        nextAssignments = nextAssignments.filter(a => a.courseId !== target.id);
+        nextEvents = nextEvents.filter(e => e.courseId !== target.id);
+        nextNotes = nextNotes.filter(n => n.courseId !== target.id);
+        nextResources = nextResources.filter(r => r.courseId !== target.id);
+        deletedCourses += 1;
+        deletedAssignments += removedAssignments.length;
+        deletedEvents += removedEvents.length;
+        deletedItems.push(`Course: ${target.code} ${target.name}`);
+        if (removedAssignments.length > 0) deletedItems.push(`  includes ${removedAssignments.length} assignment${removedAssignments.length === 1 ? '' : 's'}`);
+        if (removedEvents.length > 0) deletedItems.push(`  includes ${removedEvents.length} event${removedEvents.length === 1 ? '' : 's'}`);
+
+        if (target.calendarId) {
+          const stillUsed = nextCourses.some(c => c.calendarId === target.calendarId);
+          if (!stillUsed) {
+            nextCalendars = nextCalendars.filter(cal => cal.id !== target.calendarId);
+          }
+        }
       }
     }
 
-    if (createdAssignments > 0) setAssignments(nextAssignments);
-    if (createdEvents > 0 || reassignedEvents > 0) setEvents(normalizeEvents(nextEvents));
-    if (createdCourses > 0) {
-      setCourses(nextCourses);
-      setCalendars(nextCalendars);
-    }
-
-    if (createdAssignments > 0) toast(`Created ${createdAssignments} assignment${createdAssignments === 1 ? '' : 's'}`);
-    if (createdEvents > 0) toast(`Created ${createdEvents} event${createdEvents === 1 ? '' : 's'}`);
-    if (createdCourses > 0) toast(`Created ${createdCourses} course${createdCourses === 1 ? '' : 's'}`);
-    if (reassignedEvents > 0) toast(`Assigned ${reassignedEvents} event${reassignedEvents === 1 ? '' : 's'} to course${reassignedEvents === 1 ? '' : 's'}`);
-    return { createdAssignments, createdEvents, createdCourses, reassignedEvents };
+    return {
+      actions,
+      nextAssignments,
+      nextEvents: normalizeEvents(nextEvents),
+      nextCourses,
+      nextCalendars,
+      nextNotes,
+      nextResources,
+      createdAssignments,
+      createdEvents,
+      createdCourses,
+      reassignedEvents,
+      deletedAssignments,
+      deletedEvents,
+      deletedCourses,
+      deletedItems: deletedItems.slice(0, 20),
+    };
   };
+
+  const previewAssistantActions = async (actions: AssistantAction[]) => {
+    if (!actions.length) {
+      setAssistantPreview(null);
+      return {
+        createdAssignments: 0,
+        createdEvents: 0,
+        createdCourses: 0,
+        reassignedEvents: 0,
+        deletedAssignments: 0,
+        deletedEvents: 0,
+        deletedCourses: 0,
+      };
+    }
+    const simulated = simulateAssistantActions(actions);
+    setAssistantPreview(simulated);
+    return {
+      createdAssignments: simulated.createdAssignments,
+      createdEvents: simulated.createdEvents,
+      createdCourses: simulated.createdCourses,
+      reassignedEvents: simulated.reassignedEvents,
+      deletedAssignments: simulated.deletedAssignments,
+      deletedEvents: simulated.deletedEvents,
+      deletedCourses: simulated.deletedCourses,
+    };
+  };
+
+  const confirmAssistantPreview = async () => {
+    if (!assistantPreview) {
+      return {
+        createdAssignments: 0,
+        createdEvents: 0,
+        createdCourses: 0,
+        reassignedEvents: 0,
+        deletedAssignments: 0,
+        deletedEvents: 0,
+        deletedCourses: 0,
+      };
+    }
+    setAssignments(assistantPreview.nextAssignments);
+    setEvents(assistantPreview.nextEvents);
+    setCourses(assistantPreview.nextCourses);
+    setCalendars(assistantPreview.nextCalendars);
+    setNotes(assistantPreview.nextNotes);
+    setResources(assistantPreview.nextResources);
+
+    if (assistantPreview.createdAssignments > 0) toast(`Created ${assistantPreview.createdAssignments} assignment${assistantPreview.createdAssignments === 1 ? '' : 's'}`);
+    if (assistantPreview.createdEvents > 0) toast(`Created ${assistantPreview.createdEvents} event${assistantPreview.createdEvents === 1 ? '' : 's'}`);
+    if (assistantPreview.createdCourses > 0) toast(`Created ${assistantPreview.createdCourses} course${assistantPreview.createdCourses === 1 ? '' : 's'}`);
+    if (assistantPreview.reassignedEvents > 0) toast(`Assigned ${assistantPreview.reassignedEvents} event${assistantPreview.reassignedEvents === 1 ? '' : 's'} to course${assistantPreview.reassignedEvents === 1 ? '' : 's'}`);
+    if (assistantPreview.deletedAssignments > 0) toast(`Deleted ${assistantPreview.deletedAssignments} assignment${assistantPreview.deletedAssignments === 1 ? '' : 's'}`);
+    if (assistantPreview.deletedEvents > 0) toast(`Deleted ${assistantPreview.deletedEvents} event${assistantPreview.deletedEvents === 1 ? '' : 's'}`);
+    if (assistantPreview.deletedCourses > 0) toast(`Deleted ${assistantPreview.deletedCourses} course${assistantPreview.deletedCourses === 1 ? '' : 's'}`);
+
+    const summary = {
+      createdAssignments: assistantPreview.createdAssignments,
+      createdEvents: assistantPreview.createdEvents,
+      createdCourses: assistantPreview.createdCourses,
+      reassignedEvents: assistantPreview.reassignedEvents,
+      deletedAssignments: assistantPreview.deletedAssignments,
+      deletedEvents: assistantPreview.deletedEvents,
+      deletedCourses: assistantPreview.deletedCourses,
+    };
+    setAssistantPreview(null);
+    return summary;
+  };
+
+  const discardAssistantPreview = () => {
+    setAssistantPreview(null);
+  };
+
+  const previewCalendars = assistantPreview?.nextCalendars ?? calendars;
+  const previewCourses = assistantPreview?.nextCourses ?? courses;
+  const previewEvents = assistantPreview?.nextEvents ?? events;
+  const previewVisibleEvents = useMemo(
+    () =>
+      previewEvents.filter(e => {
+        const cal = previewCalendars.find(c => c.id === e.calendarId);
+        if (!cal) return true;
+        return cal.visible;
+      }),
+    [previewEvents, previewCalendars]
+  );
+  const previewAcademicCalendarIds = useMemo(
+    () => new Set(previewCourses.map(c => c.calendarId).filter((id): id is string => Boolean(id))),
+    [previewCourses]
+  );
+  const previewScopedVisibleEvents = useMemo(() => {
+    return previewVisibleEvents.filter(event => {
+      const isAcademic = Boolean(event.courseId) || previewAcademicCalendarIds.has(event.calendarId);
+      if (calendarScope === 'academic') return isAcademic;
+      if (calendarScope === 'personal') return !isAcademic;
+      return true;
+    });
+  }, [previewVisibleEvents, previewAcademicCalendarIds, calendarScope]);
 
   const tabTitle = useMemo(() => {
     if (activeTab === 'events') return 'Events';
@@ -596,6 +840,11 @@ const App: React.FC = () => {
           <>
           {activeTab === 'calendar' && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              {assistantPreview && (
+                <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
+                  AI preview mode is on. Calendar is showing proposed changes only. Confirm or discard in the assistant widget.
+                </div>
+              )}
               <div className="mb-5 inline-flex rounded-xl border border-slate-200 p-1 bg-slate-50">
                 {([
                   { id: 'all', label: 'All' },
@@ -619,19 +868,19 @@ const App: React.FC = () => {
               <CalendarView
                 assignments={assignments}
                 studySessions={studySessions}
-                courses={courses}
-                events={scopedVisibleEvents}
-                calendars={calendars}
+                courses={previewCourses}
+                events={assistantPreview ? previewScopedVisibleEvents : scopedVisibleEvents}
+                calendars={previewCalendars}
                 assignmentScope={calendarScope}
                 fullView
-                onEventsChange={(nextScopedEvents) => {
+                onEventsChange={assistantPreview ? undefined : (nextScopedEvents) => {
                   setEvents(prev => {
                     const preserved = prev.filter(e => !scopedVisibleEventIds.has(e.id));
                     return normalizeEvents([...preserved, ...nextScopedEvents]);
                   });
                 }}
-                onAssignmentsChange={setAssignments}
-                onAddAssignment={addAssignment}
+                onAssignmentsChange={assistantPreview ? undefined : setAssignments}
+                onAddAssignment={assistantPreview ? undefined : addAssignment}
               />
             </div>
           )}
@@ -732,7 +981,11 @@ const App: React.FC = () => {
         calendars={calendars}
         notes={notes}
         resources={resources}
-        onExecuteActions={executeAssistantActions}
+        onPreviewActions={previewAssistantActions}
+        onConfirmPreview={confirmAssistantPreview}
+        onDiscardPreview={discardAssistantPreview}
+        previewActive={Boolean(assistantPreview)}
+        previewDeletedItems={assistantPreview?.deletedItems ?? []}
       />
     </div>
   );

@@ -15,8 +15,8 @@ export type AssistantAction =
   | {
       type: 'create_event';
       title: string;
-      startTime: string; // ISO
-      endTime: string; // ISO
+      startTime: string; // Local date-time string (prefer YYYY-MM-DDTHH:mm, no timezone)
+      endTime: string; // Local date-time string (prefer YYYY-MM-DDTHH:mm, no timezone)
       eventType?: 'event' | 'exam';
       examKind?: 'exam' | 'quiz';
       examWeightPercent?: number;
@@ -29,8 +29,8 @@ export type AssistantAction =
   | {
       type: 'create_exam';
       title: string;
-      startTime: string; // ISO
-      endTime: string; // ISO
+      startTime: string; // Local date-time string (prefer YYYY-MM-DDTHH:mm, no timezone)
+      endTime: string; // Local date-time string (prefer YYYY-MM-DDTHH:mm, no timezone)
       examKind?: 'exam' | 'quiz';
       examWeightPercent?: number;
       examTotalMarks?: number;
@@ -49,6 +49,20 @@ export type AssistantAction =
   | {
       type: 'reassign_event_to_course';
       eventRef: string; // event id or part of title
+      courseRef: string; // course id/code/name
+    }
+  | {
+      type: 'delete_assignment';
+      assignmentRef: string; // assignment id or title snippet
+      deleteSeries?: boolean; // for recurring assignment series
+    }
+  | {
+      type: 'delete_event';
+      eventRef: string; // event id or title snippet
+      deleteSeries?: boolean; // for recurring event series
+    }
+  | {
+      type: 'delete_course';
       courseRef: string; // course id/code/name
     };
 
@@ -161,8 +175,8 @@ Return strict JSON only with this shape:
     {
       "type": "create_event",
       "title": "string",
-      "startTime": "ISO string",
-      "endTime": "ISO string",
+      "startTime": "YYYY-MM-DDTHH:mm (local time, no timezone suffix)",
+      "endTime": "YYYY-MM-DDTHH:mm (local time, no timezone suffix)",
       "eventType": "event|exam optional",
       "examKind": "exam|quiz optional",
       "examWeightPercent": "number optional",
@@ -175,8 +189,8 @@ Return strict JSON only with this shape:
     {
       "type": "create_exam",
       "title": "string",
-      "startTime": "ISO string",
-      "endTime": "ISO string",
+      "startTime": "YYYY-MM-DDTHH:mm (local time, no timezone suffix)",
+      "endTime": "YYYY-MM-DDTHH:mm (local time, no timezone suffix)",
       "examKind": "exam|quiz optional",
       "examWeightPercent": "number optional",
       "examTotalMarks": "number optional",
@@ -196,17 +210,35 @@ Return strict JSON only with this shape:
       "type": "reassign_event_to_course",
       "eventRef": "event id or unique title snippet",
       "courseRef": "course code/name/id"
+    },
+    {
+      "type": "delete_assignment",
+      "assignmentRef": "assignment id or unique title snippet",
+      "deleteSeries": false
+    },
+    {
+      "type": "delete_event",
+      "eventRef": "event id or unique title snippet",
+      "deleteSeries": false
+    },
+    {
+      "type": "delete_course",
+      "courseRef": "course code/name/id"
     }
   ]
 }
 
 Rules:
-- Only include actions if user clearly asked to create something.
+- Only include actions if user clearly asked for a concrete app change (create/reassign/delete).
 - If user asked for a study schedule, create one or more create_event actions.
 - If user asks to create classes/courses, emit create_course actions.
 - If user asks to assign existing events to classes, emit reassign_event_to_course actions.
+- If user explicitly asks to remove/delete something, emit delete_* actions.
+- Never emit delete actions unless deletion is clearly requested.
 - If user asks to create an exam/quiz, prefer create_exam (or create_event with eventType="exam").
 - For exam/quiz creation, include examKind when possible, and include examWeightPercent/examTotalMarks if provided.
+- Preserve exact times from attachments/messages; do not shift timezone and do not output trailing Z.
+- If a timetable/screenshot provides time ranges, copy them exactly (convert to 24h when needed).
 - If date/time missing, infer reasonable defaults.
 - Keep reply concise and confirm what actions were planned.
 `;

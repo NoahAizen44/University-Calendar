@@ -10,12 +10,27 @@ type Props = {
   events: CalendarEvent[];
   notes: CourseNote[];
   resources: CourseResource[];
-  onExecuteActions: (actions: AssistantAction[]) => Promise<{
+  onPreviewActions: (actions: AssistantAction[]) => Promise<{
     createdAssignments: number;
     createdEvents: number;
     createdCourses: number;
     reassignedEvents: number;
+    deletedAssignments: number;
+    deletedEvents: number;
+    deletedCourses: number;
   }>;
+  onConfirmPreview: () => Promise<{
+    createdAssignments: number;
+    createdEvents: number;
+    createdCourses: number;
+    reassignedEvents: number;
+    deletedAssignments: number;
+    deletedEvents: number;
+    deletedCourses: number;
+  }>;
+  onDiscardPreview: () => void;
+  previewActive: boolean;
+  previewDeletedItems: string[];
 };
 
 const AIAssistantWidget: React.FC<Props> = ({
@@ -25,13 +40,18 @@ const AIAssistantWidget: React.FC<Props> = ({
   events,
   notes,
   resources,
-  onExecuteActions,
+  onPreviewActions,
+  onConfirmPreview,
+  onDiscardPreview,
+  previewActive,
+  previewDeletedItems,
 }) => {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<Array<{ id: string; role: 'user' | 'assistant'; text: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<Array<AssistantFile & { id: string; size: number }>>([]);
+  const [pendingActionCount, setPendingActionCount] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [widgetRect, setWidgetRect] = useState({ x: 0, y: 0, width: 430, height: 620 });
   const [dragState, setDragState] = useState<null | { startX: number; startY: number; originX: number; originY: number }>(null);
@@ -162,13 +182,19 @@ const AIAssistantWidget: React.FC<Props> = ({
     try {
       const filesForAi: AssistantFile[] = pendingFiles.map(({ name, mimeType, base64Data }) => ({ name, mimeType, base64Data }));
       const result = await runAssistant(text || 'Read attached files and help me.', { courses, calendars, assignments, events, notes, resources }, filesForAi);
-      const execution = await onExecuteActions(result.actions);
+      const execution = await onPreviewActions(result.actions);
+      setPendingActionCount(result.actions.length);
       const statusBits: string[] = [];
-      if (execution.createdAssignments > 0) statusBits.push(`created ${execution.createdAssignments} assignment${execution.createdAssignments === 1 ? '' : 's'}`);
-      if (execution.createdEvents > 0) statusBits.push(`created ${execution.createdEvents} event${execution.createdEvents === 1 ? '' : 's'}`);
-      if (execution.createdCourses > 0) statusBits.push(`created ${execution.createdCourses} course${execution.createdCourses === 1 ? '' : 's'}`);
-      if (execution.reassignedEvents > 0) statusBits.push(`assigned ${execution.reassignedEvents} event${execution.reassignedEvents === 1 ? '' : 's'}`);
-      const status = statusBits.length > 0 ? ` (${statusBits.join(', ')})` : '';
+      if (execution.createdAssignments > 0) statusBits.push(`${execution.createdAssignments} assignment${execution.createdAssignments === 1 ? '' : 's'}`);
+      if (execution.createdEvents > 0) statusBits.push(`${execution.createdEvents} event${execution.createdEvents === 1 ? '' : 's'}`);
+      if (execution.createdCourses > 0) statusBits.push(`${execution.createdCourses} course${execution.createdCourses === 1 ? '' : 's'}`);
+      if (execution.reassignedEvents > 0) statusBits.push(`${execution.reassignedEvents} reassignment${execution.reassignedEvents === 1 ? '' : 's'}`);
+      if (execution.deletedAssignments > 0) statusBits.push(`${execution.deletedAssignments} assignment deletion${execution.deletedAssignments === 1 ? '' : 's'}`);
+      if (execution.deletedEvents > 0) statusBits.push(`${execution.deletedEvents} event deletion${execution.deletedEvents === 1 ? '' : 's'}`);
+      if (execution.deletedCourses > 0) statusBits.push(`${execution.deletedCourses} course deletion${execution.deletedCourses === 1 ? '' : 's'}`);
+      const status = result.actions.length > 0
+        ? `\n\nPreview ready${statusBits.length ? `: ${statusBits.join(', ')}` : ''}. Confirm to apply.`
+        : '';
       setMessages(prev => [
         ...prev,
         { id: `a_${Date.now()}`, role: 'assistant', text: `${result.reply}${status}`.trim() },
@@ -230,6 +256,58 @@ const AIAssistantWidget: React.FC<Props> = ({
           </div>
         ))}
       </div>
+
+      {previewActive && (
+        <div className="mx-4 mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span>
+              Preview mode: {pendingActionCount > 0 ? `${pendingActionCount} planned action${pendingActionCount === 1 ? '' : 's'}` : 'planned changes'}.
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onDiscardPreview();
+                  setPendingActionCount(0);
+                  setMessages(prev => [...prev, { id: `a_discard_${Date.now()}`, role: 'assistant', text: 'Preview discarded.' }]);
+                }}
+                className="px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const result = await onConfirmPreview();
+                  const bits: string[] = [];
+                  if (result.createdAssignments > 0) bits.push(`${result.createdAssignments} assignment${result.createdAssignments === 1 ? '' : 's'}`);
+                  if (result.createdEvents > 0) bits.push(`${result.createdEvents} event${result.createdEvents === 1 ? '' : 's'}`);
+                  if (result.createdCourses > 0) bits.push(`${result.createdCourses} course${result.createdCourses === 1 ? '' : 's'}`);
+                  if (result.reassignedEvents > 0) bits.push(`${result.reassignedEvents} reassignment${result.reassignedEvents === 1 ? '' : 's'}`);
+                  if (result.deletedAssignments > 0) bits.push(`${result.deletedAssignments} assignment deletion${result.deletedAssignments === 1 ? '' : 's'}`);
+                  if (result.deletedEvents > 0) bits.push(`${result.deletedEvents} event deletion${result.deletedEvents === 1 ? '' : 's'}`);
+                  if (result.deletedCourses > 0) bits.push(`${result.deletedCourses} course deletion${result.deletedCourses === 1 ? '' : 's'}`);
+                  setPendingActionCount(0);
+                  setMessages(prev => [...prev, { id: `a_apply_${Date.now()}`, role: 'assistant', text: bits.length ? `Applied: ${bits.join(', ')}.` : 'No changes to apply.' }]);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+          {previewDeletedItems.length > 0 && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-2 text-rose-800">
+              <div className="font-semibold mb-1">Will be deleted:</div>
+              <div className="space-y-0.5 max-h-24 overflow-auto">
+                {previewDeletedItems.map((item, idx) => (
+                  <div key={`${item}_${idx}`}>• {item}</div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2 bg-slate-50/40">
         {messages.length === 0 && (

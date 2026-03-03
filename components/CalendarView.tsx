@@ -594,6 +594,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   const calendarColorById = new Map(calendars.map(c => [c.id, c.color] as const));
+  const eventColor = (event: CalendarEvent) => {
+    if (event.courseId) {
+      const courseColor = courses.find(c => c.id === event.courseId)?.color;
+      if (courseColor) return courseColor;
+    }
+    return calendarColorById.get(event.calendarId) || 'bg-slate-600';
+  };
 
   const goToDay = (d: Date) => {
     setCurrentDate(startOfDay(d));
@@ -860,7 +867,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                           const durationMin = Math.max(15, endMin - startMin);
                           const top = (startMin / 60) * pxPerHour;
                           const height = (durationMin / 60) * pxPerHour;
-                          const color = calendarColorById.get(e.calendarId) || 'bg-slate-600';
+                          const color = eventColor(e);
                           return (
                             <div
                               key={e.id}
@@ -1003,7 +1010,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                               onKeyDown={ev => {
                                 if (ev.key === 'Enter' || ev.key === ' ') openEventOrAssignment(e);
                               }}
-                              className={`cursor-pointer text-[10px] truncate px-1.5 py-0.5 rounded ${calendarColorById.get(e.calendarId) || 'bg-slate-600'} text-white ring-1 ring-slate-900/15 ring-inset hover:brightness-95`}
+                              className={`cursor-pointer text-[10px] truncate px-1.5 py-0.5 rounded ${eventColor(e)} text-white ring-1 ring-slate-900/15 ring-inset hover:brightness-95`}
                               title={e.title}
                             >
                               {e.title}
@@ -1108,7 +1115,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                                 const left = colLeftPct + laneWidthPct * clamp(lane, 0, maxLanes - 1);
                                 const width = laneWidthPct;
 
-                                const color = calendarColorById.get(e.calendarId) || 'bg-slate-600';
+                                const color = eventColor(e);
 
                                 return (
                                   <div
@@ -1379,7 +1386,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                           setDraggingEventId(e.id);
                         }}
                         onDragEnd={() => setDraggingEventId(null)}
-                        className={`w-full text-left text-[10px] truncate px-1 py-0.5 rounded ${calendarColorById.get(e.calendarId) || 'bg-slate-600'} text-white hover:brightness-95 transition-colors ${
+                        className={`w-full text-left text-[10px] truncate px-1 py-0.5 rounded ${eventColor(e)} text-white hover:brightness-95 transition-colors ${
                           e.source === 'assignment' ? '' : 'ring-1 ring-slate-900/15 ring-inset'
                         }`}
                         title={`${e.title} • ${formatTime(new Date(e.startTime))}`}
