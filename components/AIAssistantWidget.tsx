@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Bot, BookOpen, Calendar, Loader2, Paperclip, Send, Sparkles, Target, X } from 'lucide-react';
 import type { Assignment, CalendarEvent, Course, CourseNote, CourseResource, UniCalendar } from '../types';
-import { runAssistant, type AssistantAction, type AssistantFile } from '../services/assistantService';
+import { runAssistant, type AssistantAction, type AssistantChatMessage, type AssistantFile } from '../services/assistantService';
 
 type Props = {
   courses: Course[];
@@ -35,6 +35,21 @@ type Props = {
   previewDeletedItems: string[];
 };
 
+type MessageAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  base64Data: string;
+  size: number;
+};
+
+type WidgetMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  attachments?: MessageAttachment[];
+};
+
 const AIAssistantWidget: React.FC<Props> = ({
   courses,
   calendars,
@@ -52,14 +67,15 @@ const AIAssistantWidget: React.FC<Props> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
-  const [messages, setMessages] = useState<Array<{ id: string; role: 'user' | 'assistant'; text: string }>>([]);
+  const [messages, setMessages] = useState<WidgetMessage[]>([]);
   const [loading, setLoading] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<Array<AssistantFile & { id: string; size: number }>>([]);
+  const [pendingFiles, setPendingFiles] = useState<MessageAttachment[]>([]);
   const [pendingActionCount, setPendingActionCount] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [widgetRect, setWidgetRect] = useState({ x: 0, y: 0, width: 430, height: 620 });
   const [dragState, setDragState] = useState<null | { startX: number; startY: number; originX: number; originY: number }>(null);
   const [resizeState, setResizeState] = useState<null | { startX: number; startY: number; width: number; height: number; x: number; y: number }>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
 
   const clampRect = (next: { x: number; y: number; width: number; height: number }) => {
     const padding = 8;
@@ -162,7 +178,7 @@ const AIAssistantWidget: React.FC<Props> = ({
 
   const addFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const next: Array<AssistantFile & { id: string; size: number }> = [];
+    const next: MessageAttachment[] = [];
     for (const file of Array.from(files)) {
       if (file.size > 8 * 1024 * 1024) continue;
       const base64Data = await readFileAsBase64(file);
@@ -180,12 +196,22 @@ const AIAssistantWidget: React.FC<Props> = ({
   const send = async () => {
     const text = draft.trim();
     if (!text && pendingFiles.length === 0) return;
-    setMessages(prev => [...prev, { id: `u_${Date.now()}`, role: 'user', text }]);
+    const outgoingAttachments = [...pendingFiles];
+    const outgoingText = text || 'Read attached files and help me.';
+    const nextMessages: WidgetMessage[] = [
+      ...messages,
+      { id: `u_${Date.now()}`, role: 'user', text: text || '(attachment)', attachments: outgoingAttachments },
+    ];
+    setMessages(nextMessages);
     setDraft('');
     setLoading(true);
     try {
-      const filesForAi: AssistantFile[] = pendingFiles.map(({ name, mimeType, base64Data }) => ({ name, mimeType, base64Data }));
-      const result = await runAssistant(text || 'Read attached files and help me.', { courses, calendars, assignments, events, notes, resources }, filesForAi);
+      const filesForAi: AssistantFile[] = outgoingAttachments.map(({ name, mimeType, base64Data }) => ({ name, mimeType, base64Data }));
+      const historyForAi: AssistantChatMessage[] = nextMessages
+        .map(m => ({ role: m.role, text: m.text.trim() }))
+        .filter(m => m.text.length > 0)
+        .slice(-16);
+      const result = await runAssistant(outgoingText, { courses, calendars, assignments, events, notes, resources }, filesForAi, historyForAi);
       const execution = await onPreviewActions(result.actions);
       setPendingActionCount(result.actions.length);
       const statusBits: string[] = [];
@@ -340,13 +366,41 @@ const AIAssistantWidget: React.FC<Props> = ({
           </div>
         )}
         {messages.map(m => (
-          <div
-            key={m.id}
-            className={`rounded-xl px-3 py-2 text-sm ${
-              m.role === 'assistant' ? 'bg-white border border-slate-200 text-slate-700' : 'bg-indigo-600 text-white ml-10'
-            }`}
-          >
-            {m.text}
+          <div key={m.id} className="space-y-2">
+            <div
+              className={`rounded-xl px-3 py-2 text-sm ${
+                m.role === 'assistant' ? 'bg-white border border-slate-200 text-slate-700' : 'bg-indigo-600 text-white ml-10'
+              }`}
+            >
+              {m.text}
+            </div>
+            {m.role === 'user' && m.attachments && m.attachments.length > 0 && (
+              <div className="ml-10 flex flex-wrap gap-2">
+                {m.attachments.map(file => {
+                  const isImage = file.mimeType.startsWith('image/');
+                  const src = isImage ? `data:${file.mimeType};base64,${file.base64Data}` : '';
+                  return (
+                    <button
+                      key={file.id}
+                      type="button"
+                      onClick={() => setPreviewAttachment(file)}
+                      className="rounded-lg border border-slate-200 bg-white p-1.5 text-left hover:bg-slate-50"
+                      title="Open attachment"
+                    >
+                      {isImage ? (
+                        <img src={src} alt={file.name} className="h-16 w-24 object-cover rounded-md mb-1" />
+                      ) : (
+                        <div className="inline-flex items-center gap-1 text-xs text-slate-600 mb-1">
+                          <Paperclip className="w-3 h-3" />
+                          File
+                        </div>
+                      )}
+                      <div className="max-w-[160px] truncate text-xs text-slate-600">{file.name}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ))}
         {loading && (
@@ -453,6 +507,40 @@ const AIAssistantWidget: React.FC<Props> = ({
       >
         <div className="absolute right-1 bottom-1 w-2.5 h-2.5 border-r-2 border-b-2 border-slate-300 rounded-br-sm" />
       </div>
+      {previewAttachment && (
+        <div
+          className="fixed inset-0 z-[120] bg-slate-900/70 flex items-center justify-center p-4"
+          onClick={() => setPreviewAttachment(null)}
+        >
+          <div
+            className="max-w-[90vw] max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-3 py-2 border-b border-slate-200 flex items-center justify-between gap-3">
+              <div className="text-sm font-medium text-slate-700 truncate">{previewAttachment.name}</div>
+              <button
+                type="button"
+                onClick={() => setPreviewAttachment(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                title="Close preview"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {previewAttachment.mimeType.startsWith('image/') ? (
+              <img
+                src={`data:${previewAttachment.mimeType};base64,${previewAttachment.base64Data}`}
+                alt={previewAttachment.name}
+                className="max-w-[90vw] max-h-[80vh] object-contain bg-slate-50"
+              />
+            ) : (
+              <div className="p-4 text-sm text-slate-600">
+                Preview is only available for images right now.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

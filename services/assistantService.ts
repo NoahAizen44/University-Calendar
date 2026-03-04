@@ -89,6 +89,11 @@ export type AssistantFile = {
   base64Data: string;
 };
 
+export type AssistantChatMessage = {
+  role: 'user' | 'assistant';
+  text: string;
+};
+
 type AssistantContext = {
   courses: Course[];
   calendars: UniCalendar[];
@@ -113,7 +118,8 @@ function extractJsonObject(text: string) {
 export async function runAssistant(
   message: string,
   context: AssistantContext,
-  files: AssistantFile[] = []
+  files: AssistantFile[] = [],
+  history: AssistantChatMessage[] = []
 ): Promise<AssistantRunResult> {
   const apiKey = getApiKey();
   if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY') {
@@ -163,6 +169,9 @@ export async function runAssistant(
   const prompt = `
 You are an app assistant for a student planner.
 You can read planner context and optionally produce actions.
+
+RECENT CHAT HISTORY (oldest -> newest):
+${JSON.stringify(history.slice(-16))}
 
 USER MESSAGE:
 ${message}
