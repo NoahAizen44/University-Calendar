@@ -65,6 +65,70 @@ const AIAssistantWidget: React.FC<Props> = ({
   previewUpdatedItems,
   previewDeletedItems,
 }) => {
+  const monthFromToken = (token: string) => {
+    const t = token.toLowerCase().slice(0, 3);
+    const idx = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(t);
+    return idx >= 0 ? idx + 1 : null;
+  };
+
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+
+  const extractExplicitExcludeYmd = (text: string) => {
+    const out = new Set<string>();
+    const hasExcludeIntent = /\b(except|exclude|excluding|skip|without)\b/i.test(text);
+    if (!hasExcludeIntent) return { hasExcludeIntent: false, dates: out };
+
+    const yearMatches = [...text.matchAll(/\b(20\d{2})\b/g)].map(m => Number(m[1]));
+    const fallbackYear = yearMatches.length > 0 ? yearMatches[0] : new Date().getFullYear();
+
+    for (const m of text.matchAll(/\b(20\d{2})-(\d{2})-(\d{2})\b/g)) {
+      out.add(`${m[1]}-${m[2]}-${m[3]}`);
+    }
+
+    for (const m of text.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2}|\d{2})\b/g)) {
+      const d = Number(m[1]);
+      const mo = Number(m[2]);
+      const yRaw = Number(m[3]);
+      const y = yRaw < 100 ? 2000 + yRaw : yRaw;
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) out.add(`${y}-${pad2(mo)}-${pad2(d)}`);
+    }
+
+    const rangeRegex = /\b(?:week\s+)?(?:of\s+)?([A-Za-z]{3,9})\s+(\d{1,2})\s*(?:-|to|–)\s*(\d{1,2})(?:\s*,?\s*(20\d{2}))?\b/gi;
+    for (const m of text.matchAll(rangeRegex)) {
+      const month = monthFromToken(m[1]);
+      if (!month) continue;
+      const dayStart = Number(m[2]);
+      const dayEnd = Number(m[3]);
+      const y = m[4] ? Number(m[4]) : fallbackYear;
+      if (dayStart < 1 || dayStart > 31 || dayEnd < 1 || dayEnd > 31 || dayEnd < dayStart) continue;
+      for (let d = dayStart; d <= dayEnd; d += 1) {
+        out.add(`${y}-${pad2(month)}-${pad2(d)}`);
+      }
+    }
+
+    return { hasExcludeIntent: true, dates: out };
+  };
+
+  const sanitizeRecurringExclusions = (actions: AssistantAction[], userText: string): AssistantAction[] => {
+    const parsed = extractExplicitExcludeYmd(userText);
+    if (!parsed.hasExcludeIntent) return actions;
+    const explicit = parsed.dates;
+    return actions.map(action => {
+      if (action.type !== 'create_event' && action.type !== 'create_exam') return action;
+      const next: AssistantAction = { ...action };
+      if (explicit.size === 0) {
+        if ('recurrenceExcludeYmd' in next) delete next.recurrenceExcludeYmd;
+        return next;
+      }
+      if (Array.isArray(next.recurrenceExcludeYmd) && next.recurrenceExcludeYmd.length > 0) {
+        next.recurrenceExcludeYmd = next.recurrenceExcludeYmd.filter(d => explicit.has(d));
+      } else {
+        next.recurrenceExcludeYmd = Array.from(explicit);
+      }
+      return next;
+    });
+  };
+
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<WidgetMessage[]>([]);
@@ -212,8 +276,9 @@ const AIAssistantWidget: React.FC<Props> = ({
         .filter(m => m.text.length > 0)
         .slice(-16);
       const result = await runAssistant(outgoingText, { courses, calendars, assignments, events, notes, resources }, filesForAi, historyForAi);
-      const execution = await onPreviewActions(result.actions);
-      setPendingActionCount(result.actions.length);
+      const sanitizedActions = sanitizeRecurringExclusions(result.actions, outgoingText);
+      const execution = await onPreviewActions(sanitizedActions);
+      setPendingActionCount(sanitizedActions.length);
       const statusBits: string[] = [];
       if (execution.createdAssignments > 0) statusBits.push(`${execution.createdAssignments} assignment${execution.createdAssignments === 1 ? '' : 's'}`);
       if (execution.createdEvents > 0) statusBits.push(`${execution.createdEvents} event${execution.createdEvents === 1 ? '' : 's'}`);
@@ -222,7 +287,7 @@ const AIAssistantWidget: React.FC<Props> = ({
       if (execution.deletedAssignments > 0) statusBits.push(`${execution.deletedAssignments} assignment deletion${execution.deletedAssignments === 1 ? '' : 's'}`);
       if (execution.deletedEvents > 0) statusBits.push(`${execution.deletedEvents} event deletion${execution.deletedEvents === 1 ? '' : 's'}`);
       if (execution.deletedCourses > 0) statusBits.push(`${execution.deletedCourses} course deletion${execution.deletedCourses === 1 ? '' : 's'}`);
-      const status = result.actions.length > 0
+      const status = sanitizedActions.length > 0
         ? `\n\nPreview ready${statusBits.length ? `: ${statusBits.join(', ')}` : ''}. Confirm to apply.`
         : '';
       setMessages(prev => [

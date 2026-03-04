@@ -278,6 +278,7 @@ Rules:
 - If user describes repeating classes (e.g. every week), use recurrence fields instead of generating many duplicates.
 - If user provides an end date (e.g. "until Apr 24"), set recurrenceUntilYmd.
 - If user provides exception weeks/dates, set recurrenceExcludeYmd with exact YYYY-MM-DD dates to skip.
+- Never infer extra excluded dates/weeks from screenshots or timetable labels unless the user explicitly asked for those exclusions in text.
 - If date/time missing, infer reasonable defaults.
 - Keep reply concise and confirm what actions were planned.
 `;
