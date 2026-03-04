@@ -239,6 +239,9 @@ Rules:
 - For exam/quiz creation, include examKind when possible, and include examWeightPercent/examTotalMarks if provided.
 - Preserve exact times from attachments/messages; do not shift timezone and do not output trailing Z.
 - If a timetable/screenshot provides time ranges, copy them exactly (convert to 24h when needed).
+- Never extend/shorten a class duration. If source says 1:00-2:00, output exactly 13:00-14:00.
+- Do not merge adjacent classes into one event. One visible timetable block = one action.
+- If any block time is unclear, skip that block and mention it in reply instead of guessing.
 - If date/time missing, infer reasonable defaults.
 - Keep reply concise and confirm what actions were planned.
 `;

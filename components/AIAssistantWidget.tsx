@@ -30,6 +30,8 @@ type Props = {
   }>;
   onDiscardPreview: () => void;
   previewActive: boolean;
+  previewCreatedItems: string[];
+  previewUpdatedItems: string[];
   previewDeletedItems: string[];
 };
 
@@ -44,6 +46,8 @@ const AIAssistantWidget: React.FC<Props> = ({
   onConfirmPreview,
   onDiscardPreview,
   previewActive,
+  previewCreatedItems,
+  previewUpdatedItems,
   previewDeletedItems,
 }) => {
   const [open, setOpen] = useState(false);
@@ -301,6 +305,26 @@ const AIAssistantWidget: React.FC<Props> = ({
               <div className="font-semibold mb-1">Will be deleted:</div>
               <div className="space-y-0.5 max-h-24 overflow-auto">
                 {previewDeletedItems.map((item, idx) => (
+                  <div key={`${item}_${idx}`}>• {item}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {previewCreatedItems.length > 0 && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-emerald-800">
+              <div className="font-semibold mb-1">Will be created:</div>
+              <div className="space-y-0.5 max-h-24 overflow-auto">
+                {previewCreatedItems.map((item, idx) => (
+                  <div key={`${item}_${idx}`}>• {item}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {previewUpdatedItems.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-amber-800">
+              <div className="font-semibold mb-1">Will be updated:</div>
+              <div className="space-y-0.5 max-h-24 overflow-auto">
+                {previewUpdatedItems.map((item, idx) => (
                   <div key={`${item}_${idx}`}>• {item}</div>
                 ))}
               </div>

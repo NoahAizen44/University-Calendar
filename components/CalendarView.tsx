@@ -868,6 +868,26 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                           const top = (startMin / 60) * pxPerHour;
                           const height = (durationMin / 60) * pxPerHour;
                           const color = eventColor(e);
+                          const lane = (() => {
+                            const lanesEnd: number[] = [];
+                            for (const prev of timedEvents) {
+                              if (prev.id === e.id) break;
+                              const ps = new Date(prev.startTime).getTime();
+                              const pe = new Date(prev.endTime).getTime();
+                              if (pe <= s.getTime() || ps >= en.getTime()) continue;
+                              let placed = false;
+                              for (let i = 0; i < lanesEnd.length; i++) {
+                                if (lanesEnd[i] <= ps) {
+                                  lanesEnd[i] = pe;
+                                  placed = true;
+                                  break;
+                                }
+                              }
+                              if (!placed) lanesEnd.push(pe);
+                            }
+                            return lanesEnd.length;
+                          })();
+                          const overlapOffsetPx = Math.min(lane, 4) * 14;
                           return (
                             <div
                               key={e.id}
@@ -878,10 +898,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                                 setDraggingEventId(e.id);
                               }}
                               onDragEnd={() => setDraggingEventId(null)}
-                              className={`absolute left-2 right-2 ${color} text-white rounded-xl px-2 py-1 shadow-sm overflow-hidden text-left hover:brightness-95 transition-colors ${
+                              className={`absolute ${color} text-white rounded-xl px-2 py-1 shadow-sm overflow-hidden text-left hover:brightness-95 transition-colors ${
                                 e.source === 'assignment' ? '' : 'ring-1 ring-slate-900/15 ring-inset'
                               }`}
-                              style={{ top, height }}
+                              style={{ top, height, left: `${8 + overlapOffsetPx}px`, right: '8px', zIndex: 10 + lane }}
                               title={`${e.title} • ${formatTime(s)}–${formatTime(en)}`}
                             >
                               <div className="text-xs font-semibold truncate">{e.title}</div>
@@ -1110,10 +1130,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                                 const height = (durationMin / 60) * pxPerHour;
 
                                 const lane = laneForEvent(e, dayTimedEvents.slice(0, idx + 1));
-                                const maxLanes = 3;
-                                const laneWidthPct = colWidthPct / maxLanes;
-                                const left = colLeftPct + laneWidthPct * clamp(lane, 0, maxLanes - 1);
-                                const width = laneWidthPct;
+                                const overlapOffsetPct = (Math.min(lane, 4) * 8) / 7;
+                                const left = colLeftPct + overlapOffsetPct;
+                                const width = Math.max(4, colWidthPct - overlapOffsetPct);
 
                                 const color = eventColor(e);
 
@@ -1133,7 +1152,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                                     }}
                                     onDragEnd={() => setDraggingEventId(null)}
                                     className={`cursor-pointer absolute ${color} text-white rounded-xl px-2 py-1 shadow-sm overflow-hidden hover:brightness-95`}
-                                    style={{ top, height, left: `${left}%`, width: `${width}%` }}
+                                    style={{ top, height, left: `${left}%`, width: `${width}%`, zIndex: 10 + lane }}
                                     title={`${e.title} • ${formatTime(s)}–${formatTime(en)}`}
                                   >
                                     <div className="text-[11px] font-semibold truncate">{e.title}</div>

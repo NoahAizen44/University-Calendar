@@ -117,6 +117,8 @@ const App: React.FC = () => {
     deletedAssignments: number;
     deletedEvents: number;
     deletedCourses: number;
+    createdItems: string[];
+    updatedItems: string[];
     deletedItems: string[];
   }>(null);
   const [authSession, setAuthSession] = useState<AuthSession | null>(() => loadStoredSession());
@@ -375,6 +377,8 @@ const App: React.FC = () => {
     let deletedAssignments = 0;
     let deletedEvents = 0;
     let deletedCourses = 0;
+    const createdItems: string[] = [];
+    const updatedItems: string[] = [];
     const deletedItems: string[] = [];
 
     for (const action of actions) {
@@ -434,6 +438,7 @@ const App: React.FC = () => {
           examWeightPercent: explicitExam ? examWeightPercent : undefined,
           examTotalMarks: explicitExam ? examTotalMarks : undefined,
         }));
+        createdItems.push(`${action.title} (${start.toLocaleString()} - ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`);
         createdEvents += 1;
         continue;
       }
@@ -465,6 +470,7 @@ const App: React.FC = () => {
           instructor: action.instructor?.trim() || '',
           calendarId: nextCalendarId,
         });
+        createdItems.push(`Course: ${nextName}`);
         createdCourses += 1;
         continue;
       }
@@ -479,6 +485,10 @@ const App: React.FC = () => {
             ? { ...e, courseId: resolvedCourse.id, calendarId: resolvedCourse.calendarId ?? e.calendarId }
             : e
         ));
+        for (const id of targetEventIds.slice(0, 12)) {
+          const ev = nextEvents.find(e => e.id === id);
+          if (ev) updatedItems.push(`Event reassigned: ${ev.title} -> ${resolvedCourse.code || resolvedCourse.name}`);
+        }
         reassignedEvents += targetEventIds.length;
         continue;
       }
@@ -583,6 +593,8 @@ const App: React.FC = () => {
       deletedAssignments,
       deletedEvents,
       deletedCourses,
+      createdItems: createdItems.slice(0, 20),
+      updatedItems: updatedItems.slice(0, 20),
       deletedItems: deletedItems.slice(0, 20),
     };
   };
@@ -985,6 +997,8 @@ const App: React.FC = () => {
         onConfirmPreview={confirmAssistantPreview}
         onDiscardPreview={discardAssistantPreview}
         previewActive={Boolean(assistantPreview)}
+        previewCreatedItems={assistantPreview?.createdItems ?? []}
+        previewUpdatedItems={assistantPreview?.updatedItems ?? []}
         previewDeletedItems={assistantPreview?.deletedItems ?? []}
       />
     </div>
