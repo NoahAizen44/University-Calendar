@@ -424,6 +424,54 @@ const App: React.FC = () => {
           'examTotalMarks' in action && typeof action.examTotalMarks === 'number'
             ? action.examTotalMarks
             : undefined;
+        const recurrenceFrequency =
+          'recurrenceFrequency' in action && (action.recurrenceFrequency === 'daily' || action.recurrenceFrequency === 'weekly')
+            ? action.recurrenceFrequency
+            : 'none';
+        const recurrence = recurrenceFrequency === 'none'
+          ? undefined
+          : recurrenceFrequency === 'daily'
+            ? {
+                frequency: 'daily' as const,
+                intervalDays:
+                  'recurrenceIntervalDays' in action && typeof action.recurrenceIntervalDays === 'number'
+                    ? Math.max(1, Math.floor(action.recurrenceIntervalDays))
+                    : 1,
+                until:
+                  'recurrenceUntilYmd' in action && action.recurrenceUntilYmd
+                    ? new Date(`${action.recurrenceUntilYmd}T23:59:59`).toISOString()
+                    : undefined,
+                excludeYmd:
+                  'recurrenceExcludeYmd' in action && Array.isArray(action.recurrenceExcludeYmd)
+                    ? action.recurrenceExcludeYmd
+                        .map(v => (typeof v === 'string' ? v.trim() : ''))
+                        .filter(v => /^\d{4}-\d{2}-\d{2}$/.test(v))
+                    : undefined,
+              }
+            : {
+                frequency: 'weekly' as const,
+                intervalWeeks:
+                  'recurrenceIntervalWeeks' in action && typeof action.recurrenceIntervalWeeks === 'number'
+                    ? Math.max(1, Math.floor(action.recurrenceIntervalWeeks))
+                    : 1,
+                byWeekday:
+                  'recurrenceByWeekday' in action && Array.isArray(action.recurrenceByWeekday) && action.recurrenceByWeekday.length > 0
+                    ? Array.from(new Set(
+                        action.recurrenceByWeekday
+                          .filter((v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 7)
+                      ))
+                    : undefined,
+                until:
+                  'recurrenceUntilYmd' in action && action.recurrenceUntilYmd
+                    ? new Date(`${action.recurrenceUntilYmd}T23:59:59`).toISOString()
+                    : undefined,
+                excludeYmd:
+                  'recurrenceExcludeYmd' in action && Array.isArray(action.recurrenceExcludeYmd)
+                    ? action.recurrenceExcludeYmd
+                        .map(v => (typeof v === 'string' ? v.trim() : ''))
+                        .filter(v => /^\d{4}-\d{2}-\d{2}$/.test(v))
+                    : undefined,
+              };
         nextEvents.push(withExamSource({
           id: uid('evt'),
           title: action.title,
@@ -437,6 +485,7 @@ const App: React.FC = () => {
           examKind: explicitExam ? (examKind ?? 'exam') : undefined,
           examWeightPercent: explicitExam ? examWeightPercent : undefined,
           examTotalMarks: explicitExam ? examTotalMarks : undefined,
+          recurrence,
         }));
         createdItems.push(`${action.title} (${start.toLocaleString()} - ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`);
         createdEvents += 1;

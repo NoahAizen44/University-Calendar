@@ -88,6 +88,13 @@ function daysBetween(a: Date, b: Date) {
   return Math.round(ms / (24 * 60 * 60 * 1000));
 }
 
+function toYmdLocal(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function getRecurringBaseId(id: string) {
   return id.replace(/_\d{4}-\d{1,2}-\d{1,2}$/, '');
 }
@@ -111,6 +118,7 @@ function expandDailyRecurrence(event: CalendarEvent, monthDate: Date): CalendarE
   const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
   const until = event.recurrence.until ? new Date(event.recurrence.until) : null;
   const intervalDays = Math.max(1, event.recurrence.intervalDays ?? 1);
+  const excluded = new Set(event.recurrence.excludeYmd ?? []);
 
   const occurrences: CalendarEvent[] = [];
   for (let day = 1; day <= monthEnd.getDate(); day++) {
@@ -130,6 +138,7 @@ function expandDailyRecurrence(event: CalendarEvent, monthDate: Date): CalendarE
     );
 
     if (until && start.getTime() > until.getTime()) continue;
+    if (excluded.has(toYmdLocal(start))) continue;
 
     const end = new Date(start.getTime() + durationMs);
     occurrences.push({
@@ -153,6 +162,7 @@ function expandWeeklyRecurrence(event: CalendarEvent, monthDate: Date): Calendar
   const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
   const until = event.recurrence.until ? new Date(event.recurrence.until) : null;
   const intervalWeeks = Math.max(1, event.recurrence.intervalWeeks ?? 1);
+  const excluded = new Set(event.recurrence.excludeYmd ?? []);
   const byWeekday = event.recurrence.byWeekday && event.recurrence.byWeekday.length > 0
     ? event.recurrence.byWeekday
     : [isoWeekday(baseStart)];
@@ -180,6 +190,7 @@ function expandWeeklyRecurrence(event: CalendarEvent, monthDate: Date): Calendar
     );
 
     if (until && start.getTime() > until.getTime()) continue;
+    if (excluded.has(toYmdLocal(start))) continue;
 
     const end = new Date(start.getTime() + durationMs);
     occurrences.push({

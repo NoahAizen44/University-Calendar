@@ -17,6 +17,12 @@ export type AssistantAction =
       title: string;
       startTime: string; // Local date-time string (prefer YYYY-MM-DDTHH:mm, no timezone)
       endTime: string; // Local date-time string (prefer YYYY-MM-DDTHH:mm, no timezone)
+      recurrenceFrequency?: 'none' | 'daily' | 'weekly';
+      recurrenceIntervalDays?: number;
+      recurrenceIntervalWeeks?: number;
+      recurrenceByWeekday?: number[];
+      recurrenceUntilYmd?: string; // YYYY-MM-DD
+      recurrenceExcludeYmd?: string[]; // YYYY-MM-DD[]
       eventType?: 'event' | 'exam';
       examKind?: 'exam' | 'quiz';
       examWeightPercent?: number;
@@ -31,6 +37,12 @@ export type AssistantAction =
       title: string;
       startTime: string; // Local date-time string (prefer YYYY-MM-DDTHH:mm, no timezone)
       endTime: string; // Local date-time string (prefer YYYY-MM-DDTHH:mm, no timezone)
+      recurrenceFrequency?: 'none' | 'daily' | 'weekly';
+      recurrenceIntervalDays?: number;
+      recurrenceIntervalWeeks?: number;
+      recurrenceByWeekday?: number[];
+      recurrenceUntilYmd?: string; // YYYY-MM-DD
+      recurrenceExcludeYmd?: string[]; // YYYY-MM-DD[]
       examKind?: 'exam' | 'quiz';
       examWeightPercent?: number;
       examTotalMarks?: number;
@@ -177,6 +189,12 @@ Return strict JSON only with this shape:
       "title": "string",
       "startTime": "YYYY-MM-DDTHH:mm (local time, no timezone suffix)",
       "endTime": "YYYY-MM-DDTHH:mm (local time, no timezone suffix)",
+      "recurrenceFrequency": "none|daily|weekly optional",
+      "recurrenceIntervalDays": "number optional",
+      "recurrenceIntervalWeeks": "number optional",
+      "recurrenceByWeekday": "array of ISO weekdays [1..7] optional",
+      "recurrenceUntilYmd": "YYYY-MM-DD optional",
+      "recurrenceExcludeYmd": "YYYY-MM-DD[] optional",
       "eventType": "event|exam optional",
       "examKind": "exam|quiz optional",
       "examWeightPercent": "number optional",
@@ -191,6 +209,12 @@ Return strict JSON only with this shape:
       "title": "string",
       "startTime": "YYYY-MM-DDTHH:mm (local time, no timezone suffix)",
       "endTime": "YYYY-MM-DDTHH:mm (local time, no timezone suffix)",
+      "recurrenceFrequency": "none|daily|weekly optional",
+      "recurrenceIntervalDays": "number optional",
+      "recurrenceIntervalWeeks": "number optional",
+      "recurrenceByWeekday": "array of ISO weekdays [1..7] optional",
+      "recurrenceUntilYmd": "YYYY-MM-DD optional",
+      "recurrenceExcludeYmd": "YYYY-MM-DD[] optional",
       "examKind": "exam|quiz optional",
       "examWeightPercent": "number optional",
       "examTotalMarks": "number optional",
@@ -242,6 +266,9 @@ Rules:
 - Never extend/shorten a class duration. If source says 1:00-2:00, output exactly 13:00-14:00.
 - Do not merge adjacent classes into one event. One visible timetable block = one action.
 - If any block time is unclear, skip that block and mention it in reply instead of guessing.
+- If user describes repeating classes (e.g. every week), use recurrence fields instead of generating many duplicates.
+- If user provides an end date (e.g. "until Apr 24"), set recurrenceUntilYmd.
+- If user provides exception weeks/dates, set recurrenceExcludeYmd with exact YYYY-MM-DD dates to skip.
 - If date/time missing, infer reasonable defaults.
 - Keep reply concise and confirm what actions were planned.
 `;

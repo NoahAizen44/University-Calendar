@@ -15,6 +15,8 @@ export interface RecurrenceRule {
   intervalWeeks?: number;
   /** ISO string; if omitted, recurrence continues indefinitely */
   until?: string;
+  /** Optional list of local dates (YYYY-MM-DD) to skip in the series. */
+  excludeYmd?: string[];
 }
 
 export interface UniCalendar {
